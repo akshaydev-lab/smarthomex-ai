@@ -85,7 +85,9 @@ function evaluateDbGasEmergencyInterlock(commandInput, alertsTable, op = 'INSERT
     alert.type === 'gas_leak' &&
     alert.severity === 'danger' &&
     (alert.is_demo === false || alert.is_demo == null) &&
-    (alert.resolved_at == null || (alert.emergency_status || '') !== 'RESOLVED')
+    alert.resolved_at == null &&
+    (alert.emergency_status || '') !== 'RESOLVED' &&
+    (alert.emergency_status || '') !== 'NORMAL'
   );
 
   if (activeHazards.length > 0) {
@@ -107,7 +109,9 @@ function simulatePollCommands(commands, alertsTable) {
     alert.type === 'gas_leak' &&
     alert.severity === 'danger' &&
     (alert.is_demo === false || alert.is_demo == null) &&
-    (alert.resolved_at == null || (alert.emergency_status || '') !== 'RESOLVED')
+    alert.resolved_at == null &&
+    (alert.emergency_status || '') !== 'RESOLVED' &&
+    (alert.emergency_status || '') !== 'NORMAL'
   );
   const isGasEmergencyActive = activeHazards.length > 0;
   const dispatched = [];
@@ -146,7 +150,7 @@ function evaluateDbAlertResolutionPolicy(oldRow, newRow, userRole = 'authenticat
   );
 
   if (op === 'DELETE') {
-    if (isRealDangerGas && (oldRow.resolved_at == null || (oldRow.emergency_status || '') !== 'RESOLVED')) {
+    if (isRealDangerGas && (oldRow.resolved_at == null || ((oldRow.emergency_status || '') !== 'RESOLVED' && (oldRow.emergency_status || '') !== 'NORMAL'))) {
       if (userRole !== 'service_role') {
         const err = new Error('UNAUTHORIZED: Active real gas emergency alerts cannot be deleted while unresolved.');
         err.code = '42501';
@@ -159,7 +163,7 @@ function evaluateDbAlertResolutionPolicy(oldRow, newRow, userRole = 'authenticat
   if (isRealDangerGas) {
     const wasUnresolved = (
       oldRow.resolved_at == null ||
-      (oldRow.emergency_status || '') !== 'RESOLVED'
+      ((oldRow.emergency_status || '') !== 'RESOLVED' && (oldRow.emergency_status || '') !== 'NORMAL')
     );
 
     const attemptingResolution = (
@@ -342,6 +346,55 @@ describe('SmartHomeX AI — Gas Emergency Interlock & Demo Separation Audit', ()
     assert.doesNotThrow(() => {
       evaluateDbGasEmergencyInterlock('ON', alertsTable);
     });
+  });
+
+  test('REGRESSION: Historical alert (is_demo=true, emergency_status=NORMAL, acknowledged=true, resolved_at=null) does NOT block relay ON', () => {
+    alertsTable.push({
+      id: 'alert-prod-historical-demo-normal',
+      user_id: USER_ID,
+      home_id: HOME_ID,
+      type: 'gas_leak',
+      severity: 'danger',
+      emergency_status: 'NORMAL',
+      acknowledged: true,
+      resolved_at: null,
+      is_demo: true,
+      created_at: new Date().toISOString(),
+    });
+
+    assert.doesNotThrow(() => {
+      evaluateDbGasEmergencyInterlock('ON', alertsTable);
+    }, 'Trigger must NOT block relay ON when alert is demo and emergency_status is NORMAL');
+
+    // Also verify gateway polling dispatches the ON command without rejection
+    const commands = [{ id: 'cmd-motor-1', action: 'ON', user_id: USER_ID }];
+    const { dispatched, rejected } = simulatePollCommands(commands, alertsTable);
+    assert.strictEqual(dispatched.length, 1, 'Command must be dispatched to ESP32 hardware');
+    assert.strictEqual(rejected.length, 0, 'Command must NOT be rejected with rejected_gas_safety');
+  });
+
+  test('REGRESSION: Real historical alert normalized to emergency_status=NORMAL does NOT block relay ON', () => {
+    alertsTable.push({
+      id: 'alert-prod-historical-real-normal',
+      user_id: USER_ID,
+      home_id: HOME_ID,
+      type: 'gas_leak',
+      severity: 'danger',
+      emergency_status: 'NORMAL',
+      acknowledged: true,
+      resolved_at: null,
+      is_demo: false,
+      created_at: new Date().toISOString(),
+    });
+
+    assert.doesNotThrow(() => {
+      evaluateDbGasEmergencyInterlock('ON', alertsTable);
+    }, 'Trigger must NOT block relay ON when real alert has emergency_status NORMAL');
+
+    const commands = [{ id: 'cmd-fan-1', action: 'ON', user_id: USER_ID }];
+    const { dispatched, rejected } = simulatePollCommands(commands, alertsTable);
+    assert.strictEqual(dispatched.length, 1);
+    assert.strictEqual(rejected.length, 0);
   });
 
   test('Frontend evaluateGasSafetyLockout allows command when lockout is simulated', () => {
@@ -1446,6 +1499,46 @@ describe('SmartHomeX AI — Gas Emergency Interlock & Demo Separation Audit', ()
     const result = simulatePollCommands(pendingCommands, alertsTable);
     assert.strictEqual(result.dispatched.length, 0);
     assert.strictEqual(result.rejected.length, 1);
+    assert.strictEqual(result.rejected[0].status, 'rejected_gas_safety');
+  });
+
+  test('Real danger alert with emergency_status = null strictly activates lockout and blocks relay ON', () => {
+    alertsTable.push({
+      id: 'alert-null-status',
+      user_id: USER_ID,
+      home_id: HOME_ID,
+      type: 'gas_leak',
+      severity: 'danger',
+      emergency_status: null,
+      is_demo: false,
+      acknowledged: false,
+      resolved_at: null,
+    });
+
+    assert.throws(() => {
+      evaluateDbGasEmergencyInterlock('ON', alertsTable);
+    }, /COMMAND_BLOCKED/);
+  });
+
+  test('Gateway poll_commands auto-rejects stale pending ON commands when real alert has emergency_status = null', () => {
+    alertsTable.push({
+      id: 'alert-null-status-poll',
+      user_id: USER_ID,
+      home_id: HOME_ID,
+      type: 'gas_leak',
+      severity: 'danger',
+      emergency_status: null,
+      is_demo: false,
+      resolved_at: null,
+    });
+
+    const pendingCommands = [
+      { id: 'cmd-stale-null-status', action: 'ON', status: 'pending' },
+    ];
+
+    const result = simulatePollCommands(pendingCommands, alertsTable);
+    assert.strictEqual(result.dispatched.length, 0, 'No energizing commands should be dispatched to ESP32');
+    assert.strictEqual(result.rejected.length, 1, 'Command must be auto-rejected for NULL emergency_status');
     assert.strictEqual(result.rejected[0].status, 'rejected_gas_safety');
   });
 

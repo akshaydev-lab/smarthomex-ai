@@ -542,11 +542,14 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
           // Check if there is an active REAL hardware danger alert in Supabase.
           // CRITICAL: Acknowledged alerts continue to block until explicitly resolved!
+          // Excludes demo alerts (isDemo = true) and resolved/normal alerts
           const activeRealGasAlert = remoteAlerts.find(a => 
             a.type === 'gas_leak' && 
             a.severity === 'danger' && 
             !a.isDemo &&
-            (a.emergencyStatus !== 'RESOLVED' || !a.resolvedTimestamp)
+            !a.resolvedTimestamp &&
+            a.emergencyStatus !== 'RESOLVED' &&
+            a.emergencyStatus !== 'NORMAL'
           );
 
           if (activeRealGasAlert && isLive) {
@@ -561,9 +564,9 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             }));
           } else if (!activeRealGasAlert && remoteTelemetry?.gas_status === 'safe') {
             // When gas reading is verified SAFE and no real danger alert is active,
-            // ensure any lingering simulated lockout is cleared.
+            // ensure any lingering simulated or pending lockout is cleared.
             setGasSafetyState(prev => {
-              if (prev.isSimulated || prev.lockoutStatus === 'CRITICAL' || prev.lockoutStatus === 'EMERGENCY_LOCKOUT') {
+              if (prev.isSimulated || prev.lockoutStatus === 'CRITICAL' || prev.lockoutStatus === 'EMERGENCY_LOCKOUT' || prev.lockoutStatus === 'LOCKOUT_PENDING_RESET') {
                 return {
                   ...prev,
                   lockoutStatus: 'NORMAL',
@@ -713,7 +716,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         // If real gas leak danger, trip local modal & life-safety lockout
         // Demo alerts (is_demo === true) MUST NEVER activate the physical hardware interlock!
         const isRealAlert = !row.is_demo;
-        const isResolved = Boolean(row.resolved_at) || row.emergency_status === 'RESOLVED';
+        const isResolved = Boolean(row.resolved_at) || row.emergency_status === 'RESOLVED' || row.emergency_status === 'NORMAL';
         if (row.type === 'gas_leak' && row.severity === 'danger' && isRealAlert && !isResolved) {
           setIsGasEmergencyModalOpen(true);
           setIsSirenMuted(false);

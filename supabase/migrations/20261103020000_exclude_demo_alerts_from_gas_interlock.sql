@@ -155,7 +155,7 @@ BEGIN
   END IF;
 
   -- 3. Check for active, unresolved, genuine gas emergency hazards for this user
-  -- Excludes demo alerts (is_demo = true)
+  -- Excludes demo alerts (is_demo = true) and resolved/normal alerts (emergency_status = 'RESOLVED' or 'NORMAL', or resolved_at IS NOT NULL)
   -- Real alerts with (is_demo IS FALSE OR is_demo IS NULL) strictly activate lockout
   -- Acknowledged real alerts CONTINUE blocking until explicitly marked resolved
   SELECT COUNT(*) INTO v_active_hazard_count
@@ -164,7 +164,8 @@ BEGIN
     AND alerts.type = 'gas_leak'
     AND alerts.severity = 'danger'
     AND (alerts.is_demo IS FALSE OR alerts.is_demo IS NULL)
-    AND (alerts.resolved_at IS NULL OR COALESCE(alerts.emergency_status, '') != 'RESOLVED');
+    AND alerts.resolved_at IS NULL
+    AND COALESCE(alerts.emergency_status, '') NOT IN ('RESOLVED', 'NORMAL');
 
   IF v_active_hazard_count > 0 THEN
     RAISE EXCEPTION 'COMMAND_BLOCKED: Electrical relay energization is prohibited during combustible gas emergency or while awaiting authorized safety reset.';
@@ -202,7 +203,8 @@ BEGIN
     IF OLD.type = 'gas_leak' 
        AND OLD.severity = 'danger' 
        AND (OLD.is_demo IS FALSE OR OLD.is_demo IS NULL) 
-       AND (OLD.resolved_at IS NULL OR COALESCE(OLD.emergency_status, '') != 'RESOLVED') THEN
+       AND OLD.resolved_at IS NULL
+       AND COALESCE(OLD.emergency_status, '') NOT IN ('RESOLVED', 'NORMAL') THEN
       
       -- Safely extract JWT role (fail closed)
       v_role := NULLIF(TRIM(current_setting('request.jwt.claim.role', true)), '');
@@ -234,10 +236,10 @@ BEGIN
   );
 
   IF v_is_real_danger_gas THEN
-    -- Check if OLD was unresolved (either resolved_at IS NULL OR emergency_status != 'RESOLVED')
+    -- Check if OLD was unresolved (resolved_at IS NULL AND emergency_status NOT IN ('RESOLVED', 'NORMAL'))
     v_was_unresolved := (
       OLD.resolved_at IS NULL 
-      OR COALESCE(OLD.emergency_status, '') != 'RESOLVED'
+      AND COALESCE(OLD.emergency_status, '') NOT IN ('RESOLVED', 'NORMAL')
     );
 
     -- Check if NEW attempts to transition into a resolved state

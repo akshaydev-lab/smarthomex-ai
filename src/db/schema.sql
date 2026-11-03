@@ -590,7 +590,8 @@ BEGIN
     AND alerts.type = 'gas_leak'
     AND alerts.severity = 'danger'
     AND (alerts.is_demo IS FALSE OR alerts.is_demo IS NULL)
-    AND (alerts.resolved_at IS NULL OR COALESCE(alerts.emergency_status, '') != 'RESOLVED');
+    AND alerts.resolved_at IS NULL
+    AND COALESCE(alerts.emergency_status, '') NOT IN ('RESOLVED', 'NORMAL');
 
   IF v_active_hazard_count > 0 THEN
     RAISE EXCEPTION 'COMMAND_BLOCKED: Electrical relay energization is prohibited during combustible gas emergency or while awaiting authorized safety reset.';
@@ -626,7 +627,8 @@ BEGIN
     IF OLD.type = 'gas_leak' 
        AND OLD.severity = 'danger' 
        AND (OLD.is_demo IS FALSE OR OLD.is_demo IS NULL) 
-       AND (OLD.resolved_at IS NULL OR COALESCE(OLD.emergency_status, '') != 'RESOLVED') THEN
+       AND OLD.resolved_at IS NULL
+       AND COALESCE(OLD.emergency_status, '') NOT IN ('RESOLVED', 'NORMAL') THEN
       
       v_role := NULLIF(TRIM(current_setting('request.jwt.claim.role', true)), '');
       IF v_role IS NULL THEN
@@ -657,7 +659,7 @@ BEGIN
   IF v_is_real_danger_gas THEN
     v_was_unresolved := (
       OLD.resolved_at IS NULL 
-      OR COALESCE(OLD.emergency_status, '') != 'RESOLVED'
+      AND COALESCE(OLD.emergency_status, '') NOT IN ('RESOLVED', 'NORMAL')
     );
 
     v_attempting_resolution := (

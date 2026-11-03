@@ -425,10 +425,15 @@ serve(async (req: Request) => {
           .eq('type', 'gas_leak')
           .is('resolved_at', null)
           .or('is_demo.is.null,is_demo.eq.false')
-          .limit(1)
-          .maybeSingle();
+          .limit(5);
 
-        if (!existingCritical) {
+        const hasActiveCritical = Boolean(
+          existingCritical?.some(
+            a => a.emergency_status !== 'RESOLVED' && a.emergency_status !== 'NORMAL'
+          )
+        );
+
+        if (!hasActiveCritical) {
           const adcText = validatedGasRawAdc != null ? `Raw ADC: ${validatedGasRawAdc}` : 'Raw ADC: N/A';
           const alertDesc = `CRITICAL DANGER: Combustible gas detected above danger threshold (${adcText}, Threshold: 1600). Local ESP32 safety lockout triggered: Light (GPIO 14), Fan (GPIO 25), Motor (GPIO 26) disconnected. Main Contactor TRIPPED. Local audible siren sounding. Evacuate premises immediately!`;
 
@@ -534,19 +539,30 @@ serve(async (req: Request) => {
       }
 
       // Life-Safety Gate: Check if an active unresolved real gas hazard exists for this user
-      // Matches SQL trigger: (is_demo IS FALSE OR is_demo IS NULL) AND (resolved_at IS NULL OR emergency_status != 'RESOLVED')
+      // Matches SQL trigger: (is_demo IS FALSE OR is_demo IS NULL) 
+      //   AND resolved_at IS NULL 
+      //   AND COALESCE(emergency_status, '') NOT IN ('RESOLVED', 'NORMAL')
+      // Note: Do not filter emergency_status via .not('emergency_status', 'in', ...) in PostgREST
+      // because PostgREST eliminates rows where emergency_status IS NULL. We retrieve all unresolved
+      // danger alerts and filter in JS to include NULL / CRITICAL / SILENCED / LOCKOUT_PENDING_RESET
+      // while excluding RESOLVED and NORMAL.
       const { data: activeGasHazards } = await supabase
         .from('alerts')
         .select('id, emergency_status, resolved_at, is_demo')
         .eq('user_id', authenticatedUserId)
         .eq('type', 'gas_leak')
         .eq('severity', 'danger')
+        .is('resolved_at', null)
         .or('is_demo.is.null,is_demo.eq.false')
         .limit(10);
 
       const isGasEmergencyActive = Boolean(
         activeGasHazards?.some(
-          a => (!a.resolved_at || a.emergency_status !== 'RESOLVED') && (a.is_demo === false || a.is_demo == null)
+          a => 
+            !a.resolved_at && 
+            a.emergency_status !== 'RESOLVED' && 
+            a.emergency_status !== 'NORMAL' && 
+            (a.is_demo === false || a.is_demo == null)
         )
       );
 
@@ -1035,6 +1051,7 @@ serve(async (req: Request) => {
         .eq('user_id', authenticatedUserId)
         .eq('home_id', authenticatedHomeId)
         .eq('type', 'gas_leak')
+        .is('resolved_at', null)
         .or('is_demo.is.null,is_demo.eq.false');
 
       if (resolveErr) {
@@ -1090,6 +1107,7 @@ serve(async (req: Request) => {
         .eq('user_id', authenticatedUserId)
         .eq('home_id', authenticatedHomeId)
         .eq('type', 'gas_leak')
+        .is('resolved_at', null)
         .or('is_demo.is.null,is_demo.eq.false');
 
       console.log(`[SIREN SILENCED] Mobile siren silenced for user ${authenticatedUserId}. Emergency remains ACTIVE.`);

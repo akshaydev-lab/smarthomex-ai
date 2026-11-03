@@ -590,27 +590,59 @@ BEGIN
     v_missing_items := v_missing_items || ' [Primary Key on device_tokens]';
   END IF;
 
-  -- Check foreign keys
+  -- Check foreign keys (validate by actual column relationship and referenced table, not hardcoded constraint names)
   IF NOT EXISTS (
-    SELECT 1 FROM information_schema.table_constraints 
-    WHERE table_schema = 'public' AND table_name = 'device_tokens' AND constraint_name = 'fk_device_tokens_user'
+    SELECT 1 FROM information_schema.table_constraints tc
+    JOIN information_schema.key_column_usage kcu 
+      ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+    JOIN information_schema.constraint_column_usage ccu 
+      ON tc.constraint_name = ccu.constraint_name AND tc.table_schema = ccu.table_schema
+    WHERE tc.table_schema = 'public'
+      AND tc.table_name = 'device_tokens'
+      AND tc.constraint_type = 'FOREIGN KEY'
+      AND kcu.column_name = 'user_id'
+      AND ccu.table_name = 'profiles'
+      AND ccu.column_name = 'id'
   ) THEN
-    v_missing_items := v_missing_items || ' [FK: fk_device_tokens_user]';
+    v_missing_items := v_missing_items || ' [FK: device_tokens.user_id -> profiles.id]';
   END IF;
 
   IF NOT EXISTS (
-    SELECT 1 FROM information_schema.table_constraints 
-    WHERE table_schema = 'public' AND table_name = 'device_tokens' AND constraint_name = 'fk_device_tokens_home'
+    SELECT 1 FROM information_schema.table_constraints tc
+    JOIN information_schema.key_column_usage kcu 
+      ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+    JOIN information_schema.constraint_column_usage ccu 
+      ON tc.constraint_name = ccu.constraint_name AND tc.table_schema = ccu.table_schema
+    WHERE tc.table_schema = 'public'
+      AND tc.table_name = 'device_tokens'
+      AND tc.constraint_type = 'FOREIGN KEY'
+      AND kcu.column_name = 'home_id'
+      AND ccu.table_name = 'homes'
+      AND ccu.column_name = 'id'
   ) THEN
-    v_missing_items := v_missing_items || ' [FK: fk_device_tokens_home]';
+    v_missing_items := v_missing_items || ' [FK: device_tokens.home_id -> homes.id]';
   END IF;
 
-  -- Check unique constraint
+  -- Check unique constraint or unique index on token_hash (validate by column, not hardcoded constraint name)
   IF NOT EXISTS (
-    SELECT 1 FROM information_schema.table_constraints 
-    WHERE table_schema = 'public' AND table_name = 'device_tokens' AND constraint_name = 'uq_device_tokens_hash'
+    SELECT 1 FROM information_schema.table_constraints tc
+    JOIN information_schema.key_column_usage kcu 
+      ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+    WHERE tc.table_schema = 'public'
+      AND tc.table_name = 'device_tokens'
+      AND tc.constraint_type IN ('UNIQUE', 'PRIMARY KEY')
+      AND kcu.column_name = 'token_hash'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM pg_index i
+    JOIN pg_class c ON c.oid = i.indrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = ANY(i.indkey)
+    WHERE n.nspname = 'public'
+      AND c.relname = 'device_tokens'
+      AND a.attname = 'token_hash'
+      AND i.indisunique = true
   ) THEN
-    v_missing_items := v_missing_items || ' [Unique: uq_device_tokens_hash]';
+    v_missing_items := v_missing_items || ' [Unique: device_tokens.token_hash]';
   END IF;
 
   -- Check functions
