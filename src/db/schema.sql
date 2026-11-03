@@ -109,6 +109,7 @@ CREATE TABLE IF NOT EXISTS public.device_commands (
   round_trip_ms INT,
   nonce TEXT NOT NULL,
   auth_token_signature TEXT,
+  payload JSONB,
   acknowledged_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -169,21 +170,26 @@ CREATE TABLE IF NOT EXISTS public.alerts (
   user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   type TEXT NOT NULL CHECK (type IN ('gas_leak', 'smoke', 'high_temp', 'device_offline', 'abnormal_power')),
   severity TEXT NOT NULL CHECK (severity IN ('info', 'warning', 'danger')),
+  emergency_status TEXT CHECK (emergency_status IN ('NORMAL', 'WARNING', 'CRITICAL', 'SILENCED', 'RESOLVED', 'SENSOR_FAULT', 'DEVICE_OFFLINE', 'EMERGENCY_LOCKOUT', 'LOCKOUT_PENDING_RESET')) DEFAULT 'NORMAL',
   title TEXT NOT NULL,
   description TEXT NOT NULL,
   source TEXT,
   action_taken TEXT,
   gas_ppm NUMERIC(6,1),
+  sensor_reading TEXT,
   room TEXT,
   evacuation_advised BOOLEAN DEFAULT false,
   acknowledged BOOLEAN NOT NULL DEFAULT false,
   acknowledged_at TIMESTAMPTZ,
+  resolved_at TIMESTAMPTZ,
   is_demo BOOLEAN NOT NULL DEFAULT false,
+  device_id UUID REFERENCES public.devices(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_alerts_user_acknowledged ON public.alerts(user_id, acknowledged, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_alerts_severity ON public.alerts(severity);
+CREATE INDEX IF NOT EXISTS idx_alerts_emergency_status ON public.alerts(user_id, emergency_status, created_at DESC);
 
 -- ==============================================================================
 -- Table 9: device_status (Realtime Node Heartbeats & Telemetry Health)
@@ -264,6 +270,7 @@ CREATE POLICY "Users can update command acknowledgements" ON public.device_comma
   )
   WITH CHECK (
     auth.uid() = user_id AND
+    status = 'timeout' AND
     EXISTS (
       SELECT 1 FROM public.devices
       WHERE devices.id = device_commands.device_id
@@ -519,29 +526,185 @@ SECURITY DEFINER
 SET search_path = public, extensions, pg_temp
 AS $$
 DECLARE
-  active_hazard_count INT;
+  v_action_upper TEXT;
+  v_is_energizing BOOLEAN := false;
+  v_active_hazard_count INT := 0;
+  v_role TEXT := NULL;
+  v_raw_claims TEXT;
 BEGIN
-  IF UPPER(TRIM(new.action)) IN ('ON', 'TRUE', '1', 'START', 'ENABLE') THEN
-    SELECT COUNT(*) INTO active_hazard_count
-    FROM public.alerts
-    WHERE alerts.user_id = new.user_id
-      AND alerts.type = 'gas_leak'
-      AND alerts.severity = 'danger'
-      AND alerts.acknowledged = false;
+  v_action_upper := UPPER(TRIM(COALESCE(NEW.action, '')));
 
-    IF active_hazard_count > 0 THEN
-      RAISE EXCEPTION 'COMMAND_BLOCKED: Electrical relay energization is prohibited during combustible gas emergency.';
+  IF v_action_upper IN ('OFF', '0', 'FALSE', 'STOP', 'DISABLE', 'EMERGENCY_STOP') THEN
+    v_is_energizing := false;
+  ELSIF v_action_upper = 'SET_BRIGHTNESS' THEN
+    BEGIN
+      IF (to_jsonb(NEW) -> 'payload') IS NOT NULL AND (
+           ((to_jsonb(NEW) -> 'payload') ->> 'brightness') = '0' 
+           OR ((to_jsonb(NEW) -> 'payload') ->> 'value') = '0'
+           OR ((to_jsonb(NEW) -> 'payload') ->> 'level') = '0'
+         ) THEN
+        v_is_energizing := false;
+      ELSE
+        v_is_energizing := true;
+      END IF;
+    EXCEPTION WHEN OTHERS THEN
+      v_is_energizing := true;
+    END;
+  ELSE
+    v_is_energizing := true;
+  END IF;
+
+  IF NOT v_is_energizing THEN
+    RETURN NEW;
+  END IF;
+
+  IF TG_OP = 'UPDATE' THEN
+    IF (NEW.status IN ('acknowledged', 'failed', 'rejected_gas_safety', 'timeout')) 
+       AND (NEW.action IS NOT DISTINCT FROM OLD.action) THEN
+      
+      v_role := NULLIF(TRIM(current_setting('request.jwt.claim.role', true)), '');
+      IF v_role IS NULL THEN
+        v_raw_claims := NULLIF(TRIM(current_setting('request.jwt.claims', true)), '');
+        IF v_raw_claims IS NOT NULL THEN
+          BEGIN
+            v_role := NULLIF(TRIM(v_raw_claims::jsonb ->> 'role'), '');
+          EXCEPTION WHEN OTHERS THEN
+            v_role := NULL;
+          END;
+        END IF;
+      END IF;
+
+      IF v_role = 'service_role' THEN
+        RETURN NEW;
+      END IF;
+
+      IF NEW.status != 'timeout' THEN
+        RAISE EXCEPTION 'UNAUTHORIZED: Terminal command status "%" can only be recorded by the hardware gateway.', NEW.status;
+      END IF;
     END IF;
   END IF;
 
-  RETURN new;
+  SELECT COUNT(*) INTO v_active_hazard_count
+  FROM public.alerts
+  WHERE alerts.user_id = NEW.user_id
+    AND alerts.type = 'gas_leak'
+    AND alerts.severity = 'danger'
+    AND (alerts.is_demo IS FALSE OR alerts.is_demo IS NULL)
+    AND (alerts.resolved_at IS NULL OR COALESCE(alerts.emergency_status, '') != 'RESOLVED');
+
+  IF v_active_hazard_count > 0 THEN
+    RAISE EXCEPTION 'COMMAND_BLOCKED: Electrical relay energization is prohibited during combustible gas emergency or while awaiting authorized safety reset.';
+  END IF;
+
+  RETURN NEW;
 END;
 $$;
 
 DROP TRIGGER IF EXISTS trg_gas_safety_lockout ON public.device_commands;
 CREATE TRIGGER trg_gas_safety_lockout
-  BEFORE INSERT OR UPDATE OF action ON public.device_commands
+  BEFORE INSERT OR UPDATE ON public.device_commands
   FOR EACH ROW EXECUTE FUNCTION public.check_gas_emergency_interlock();
+
+-- ==============================================================================
+-- Trigger: Prevent Unauthorized Direct Resolution of Real Gas Emergencies
+-- ==============================================================================
+CREATE OR REPLACE FUNCTION public.prevent_unauthorized_alert_resolution()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions, pg_temp
+AS $$
+DECLARE
+  v_role TEXT := NULL;
+  v_raw_claims TEXT;
+  v_is_real_danger_gas BOOLEAN;
+  v_was_unresolved BOOLEAN;
+  v_attempting_resolution BOOLEAN;
+  v_attempting_evasion BOOLEAN;
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    IF OLD.type = 'gas_leak' 
+       AND OLD.severity = 'danger' 
+       AND (OLD.is_demo IS FALSE OR OLD.is_demo IS NULL) 
+       AND (OLD.resolved_at IS NULL OR COALESCE(OLD.emergency_status, '') != 'RESOLVED') THEN
+      
+      v_role := NULLIF(TRIM(current_setting('request.jwt.claim.role', true)), '');
+      IF v_role IS NULL THEN
+        v_raw_claims := NULLIF(TRIM(current_setting('request.jwt.claims', true)), '');
+        IF v_raw_claims IS NOT NULL THEN
+          BEGIN
+            v_role := NULLIF(TRIM(v_raw_claims::jsonb ->> 'role'), '');
+          EXCEPTION WHEN OTHERS THEN
+            v_role := NULL;
+          END;
+        END IF;
+      END IF;
+
+      IF v_role IS DISTINCT FROM 'service_role' THEN
+        RAISE EXCEPTION 'UNAUTHORIZED: Active real gas emergency alerts cannot be deleted while unresolved.';
+      END IF;
+    END IF;
+
+    RETURN OLD;
+  END IF;
+
+  v_is_real_danger_gas := (
+    OLD.type = 'gas_leak' 
+    AND OLD.severity = 'danger' 
+    AND (OLD.is_demo IS FALSE OR OLD.is_demo IS NULL)
+  );
+
+  IF v_is_real_danger_gas THEN
+    v_was_unresolved := (
+      OLD.resolved_at IS NULL 
+      OR COALESCE(OLD.emergency_status, '') != 'RESOLVED'
+    );
+
+    v_attempting_resolution := (
+      (NEW.emergency_status = 'RESOLVED' AND COALESCE(OLD.emergency_status, '') != 'RESOLVED')
+      OR (NEW.resolved_at IS NOT NULL AND OLD.resolved_at IS NULL)
+    );
+
+    v_attempting_evasion := (
+      NEW.user_id IS DISTINCT FROM OLD.user_id
+      OR NEW.home_id IS DISTINCT FROM OLD.home_id
+      OR NEW.type IS DISTINCT FROM OLD.type
+      OR NEW.severity IS DISTINCT FROM OLD.severity
+      OR NEW.is_demo IS DISTINCT FROM OLD.is_demo
+      OR NEW.is_demo IS TRUE
+    );
+
+    IF (v_was_unresolved AND v_attempting_resolution) OR v_attempting_evasion THEN
+      v_role := NULLIF(TRIM(current_setting('request.jwt.claim.role', true)), '');
+      IF v_role IS NULL THEN
+        v_raw_claims := NULLIF(TRIM(current_setting('request.jwt.claims', true)), '');
+        IF v_raw_claims IS NOT NULL THEN
+          BEGIN
+            v_role := NULLIF(TRIM(v_raw_claims::jsonb ->> 'role'), '');
+          EXCEPTION WHEN OTHERS THEN
+            v_role := NULL;
+          END;
+        END IF;
+      END IF;
+
+      IF v_role IS DISTINCT FROM 'service_role' THEN
+        IF v_attempting_evasion THEN
+          RAISE EXCEPTION 'UNAUTHORIZED: Modifying user_id, home_id, type, severity, or is_demo on real gas emergency alerts is prohibited.';
+        ELSE
+          RAISE EXCEPTION 'UNAUTHORIZED: Real gas emergencies cannot be directly resolved via client API. An authorized safety reset must be submitted to the gateway for atmospheric validation.';
+        END IF;
+      END IF;
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_prevent_unauthorized_alert_resolution ON public.alerts;
+CREATE TRIGGER trg_prevent_unauthorized_alert_resolution
+  BEFORE UPDATE OR DELETE ON public.alerts
+  FOR EACH ROW EXECUTE FUNCTION public.prevent_unauthorized_alert_resolution();
 
 -- ==============================================================================
 -- Supabase Realtime Publication Setup

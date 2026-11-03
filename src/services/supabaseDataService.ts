@@ -364,6 +364,11 @@ export async function insertAlertToSupabase(userId: string, alert: SystemAlert) 
   const client = getSupabaseClient();
   if (!client || !isSupabaseConfigured) return null;
 
+  // In production, never persist demo simulation alerts into the production database
+  if (import.meta.env.PROD && alert.isDemo) {
+    return false;
+  }
+
   try {
     // Resolve home_id — required by NOT NULL schema constraint
     const homeId = await fetchUserHomeId(userId);
@@ -395,6 +400,76 @@ export async function insertAlertToSupabase(userId: string, alert: SystemAlert) 
   } catch (err) {
     console.warn('Alert insert to Supabase skipped:', err);
     return false;
+  }
+}
+
+/**
+ * Persists alert acknowledgement status to Supabase
+ */
+export async function acknowledgeAlertInSupabase(userId: string, alertId: string): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client || !isSupabaseConfigured) return false;
+
+  try {
+    const { error } = await client
+      .from('alerts')
+      .update({ acknowledged: true })
+      .eq('user_id', userId)
+      .eq('id', alertId);
+
+    if (error) {
+      console.warn('Supabase acknowledgeAlert error:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('Failed to update alert acknowledgement in Supabase:', err);
+    return false;
+  }
+}
+
+/**
+ * Submits an authorized safety reset to the gateway for server-side atmospheric verification.
+ * Only the server-side gateway (running with service_role) can resolve real gas emergency alerts
+ * after verifying fresh telemetry (< 900 ADC) and fresh heartbeat.
+ */
+export async function resolveGasAlertsInSupabase(
+  _userId: string, 
+  authorizedBy?: string
+): Promise<{ success: boolean; error?: string }> {
+  const client = getSupabaseClient();
+  if (!client || !isSupabaseConfigured) {
+    return { success: false, error: 'Supabase client not configured' };
+  }
+
+  try {
+    const { data: { session } } = await client.auth.getSession();
+    const token = session?.access_token;
+    if (!token) {
+      return { success: false, error: 'User session not found. Please log in.' };
+    }
+
+    const { data, error } = await client.functions.invoke('esp32-gateway?action=safety_reset', {
+      body: { action: 'safety_reset', source: authorizedBy || 'web_dashboard_operator' },
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      method: 'POST',
+    });
+
+    if (error) {
+      console.warn('Gateway safety_reset invocation error:', error);
+      return { success: false, error: error.message };
+    }
+
+    if (data && data.success === false) {
+      return { success: false, error: data.error || 'Safety reset rejected by gateway' };
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    console.warn('resolveGasAlertsInSupabase error:', err);
+    return { success: false, error: err?.message || 'Failed to submit safety reset request' };
   }
 }
 
@@ -489,12 +564,13 @@ export async function fetchAlertsFromSupabase(
         deviceId: row.device_id || undefined,
         type: row.type || 'gas_leak',
         severity: row.severity || 'warning',
-        emergencyStatus: row.severity === 'danger' ? 'CRITICAL' : 'NORMAL',
+        emergencyStatus: (row.emergency_status as any) || (row.severity === 'danger' ? 'CRITICAL' : 'NORMAL'),
         category: row.severity === 'danger' ? 'critical' : 'device',
         title: row.title || 'System Alert',
         description: row.description || '',
-        sensorReading: row.gas_ppm != null ? `${row.gas_ppm} PPM` : undefined,
+        sensorReading: row.sensor_reading || (row.gas_ppm != null ? `${row.gas_ppm} PPM` : undefined),
         timestamp: formattedTimestamp,
+        resolvedTimestamp: row.resolved_at || undefined,
         isDemo: Boolean(row.is_demo ?? false),
         acknowledged: Boolean(row.acknowledged ?? false),
         source: row.source || 'ESP32 Hardware Node',

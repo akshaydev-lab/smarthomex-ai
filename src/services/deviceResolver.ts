@@ -12,6 +12,39 @@ export function isUuid(val: unknown): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val.trim());
 }
 
+/**
+ * Evaluates whether a hardware command must be inhibited due to life-safety gas emergency.
+ *
+ * CRITICAL SAFETY REQUIREMENTS:
+ * 1. Real hardware gas danger (gasStatus = 'danger') or active real lockout strictly blocks relay energization.
+ * 2. Demo alerts / simulated lockout (isSimulatedLockout = true) must NEVER activate the physical hardware interlock.
+ * 3. De-energizing relays (targetState = false / OFF) is never blocked during an emergency.
+ */
+export function evaluateGasSafetyLockout(
+  gasStatus: string,
+  lockoutStatus?: string,
+  isSimulatedLockout: boolean = false
+): { isBlocked: boolean; statusCode?: number; statusText?: string; reason?: string } {
+  const isLockoutActive = 
+    gasStatus === 'danger' || 
+    ((lockoutStatus === 'EMERGENCY_LOCKOUT' || lockoutStatus === 'LOCKOUT_PENDING_RESET' || lockoutStatus === 'CRITICAL') && !isSimulatedLockout);
+
+  if (isLockoutActive) {
+    const reasonMsg = lockoutStatus === 'LOCKOUT_PENDING_RESET'
+      ? 'COMMAND REJECTED: System is in LOCKOUT_PENDING_RESET. Combustible gas cleared below threshold, but manual safety verification and reset is required before circuits can be energized.'
+      : 'COMMAND BLOCKED: Electrical relay activation is inhibited during combustible gas alert (spark ignition hazard).';
+
+    return {
+      isBlocked: true,
+      statusCode: 403,
+      statusText: 'SAFETY_INTERLOCK_ACTIVATED',
+      reason: reasonMsg,
+    };
+  }
+
+  return { isBlocked: false };
+}
+
 export interface ResolvedDatabaseDevice {
   id: string; // The primary key UUID in public.devices
   home_id: string;

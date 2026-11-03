@@ -413,7 +413,7 @@ export const subscribeToAlerts = (userId: string, onNewAlert: (payload: unknown)
     .on(
       'postgres_changes',
       {
-        event: 'INSERT',
+        event: '*',
         schema: 'public',
         table: 'alerts',
         filter: `user_id=eq.${userId}`,

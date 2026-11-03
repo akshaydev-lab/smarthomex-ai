@@ -44,6 +44,8 @@ import {
 import { emergencySiren } from '../lib/emergencySound';
 import { 
   insertAlertToSupabase,
+  acknowledgeAlertInSupabase,
+  resolveGasAlertsInSupabase,
   fetchDevicesFromSupabase,
   fetchLatestSensorTelemetry,
   fetchLatestDeviceStatus,
@@ -305,7 +307,26 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
-          return import.meta.env.PROD ? { ...parsed, isSimulated: false } : parsed;
+          // Demo alerts/simulations must NEVER activate physical hardware lockouts!
+          // If state was simulated or in production, do not restore a simulated lockout!
+          if (import.meta.env.PROD || parsed.isSimulated) {
+            return {
+              lockoutStatus: 'NORMAL',
+              mainContactorTripped: false,
+              exhaustSafetyCertified: Boolean(parsed.exhaustSafetyCertified),
+              exhaustFanActive: false,
+              buzzerActive: false,
+              gasClearedPendingReset: false,
+              sensorFault: false,
+              isMobileSirenSilenced: false,
+              lastIncidentTimestamp: null,
+              lastResetTimestamp: parsed.lastResetTimestamp || null,
+              resetAuthorizedBy: null,
+              isSimulated: false,
+              rawAdc: null,
+            };
+          }
+          return parsed;
         } catch {
           // fallback
         }
@@ -467,20 +488,22 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             isHardwareConnected: isLive && !remoteTelemetry.is_demo,
           }));
 
-          if (isFreshTelemetry && remoteTelemetry.gas_status === 'danger') {
+          if (isFreshTelemetry && remoteTelemetry.gas_status === 'danger' && !remoteTelemetry.is_demo) {
             setIsGasEmergencyModalOpen(true);
             setGasSafetyState(prev => ({
               ...prev,
               lockoutStatus: 'CRITICAL',
               mainContactorTripped: true,
               buzzerActive: true,
+              isSimulated: false,
               rawAdc: rawAdcHydrated ?? prev.rawAdc,
             }));
-          } else if (isFreshTelemetry && remoteTelemetry.gas_status === 'sensor_fault') {
+          } else if (isFreshTelemetry && remoteTelemetry.gas_status === 'sensor_fault' && !remoteTelemetry.is_demo) {
             setGasSafetyState(prev => ({
               ...prev,
               lockoutStatus: prev.lockoutStatus === 'CRITICAL' || prev.lockoutStatus === 'EMERGENCY_LOCKOUT' ? prev.lockoutStatus : 'SENSOR_FAULT',
               sensorFault: true,
+              isSimulated: false,
               rawAdc: rawAdcHydrated ?? prev.rawAdc,
             }));
           }
@@ -516,6 +539,43 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             const newFromRealtime = prev.filter(a => !existingIds.has(a.id) && !a.isDemo);
             return [...newFromRealtime, ...remoteAlerts];
           });
+
+          // Check if there is an active REAL hardware danger alert in Supabase.
+          // CRITICAL: Acknowledged alerts continue to block until explicitly resolved!
+          const activeRealGasAlert = remoteAlerts.find(a => 
+            a.type === 'gas_leak' && 
+            a.severity === 'danger' && 
+            !a.isDemo &&
+            (a.emergencyStatus !== 'RESOLVED' || !a.resolvedTimestamp)
+          );
+
+          if (activeRealGasAlert && isLive) {
+            setIsGasEmergencyModalOpen(true);
+            setGasSafetyState(prev => ({
+              ...prev,
+              lockoutStatus: (activeRealGasAlert.emergencyStatus as any) || 'CRITICAL',
+              mainContactorTripped: true,
+              buzzerActive: true,
+              isSimulated: false,
+              rawAdc: activeRealGasAlert.gasPpm ? Math.round(activeRealGasAlert.gasPpm * 3.8) : prev.rawAdc,
+            }));
+          } else if (!activeRealGasAlert && remoteTelemetry?.gas_status === 'safe') {
+            // When gas reading is verified SAFE and no real danger alert is active,
+            // ensure any lingering simulated lockout is cleared.
+            setGasSafetyState(prev => {
+              if (prev.isSimulated || prev.lockoutStatus === 'CRITICAL' || prev.lockoutStatus === 'EMERGENCY_LOCKOUT') {
+                return {
+                  ...prev,
+                  lockoutStatus: 'NORMAL',
+                  mainContactorTripped: false,
+                  buzzerActive: false,
+                  gasClearedPendingReset: false,
+                  isSimulated: false,
+                };
+              }
+              return prev;
+            });
+          }
         } else {
           setAlerts(prev => prev.filter(a => !a.isDemo));
         }
@@ -633,6 +693,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           title: String(row.title || 'System Alert'),
           description: String(row.description || ''),
           timestamp: formattedTimestamp,
+          resolvedTimestamp: (row.resolved_at as string) || undefined,
           isDemo: Boolean(row.is_demo ?? false),
           acknowledged: Boolean(row.acknowledged ?? false),
           source: String(row.source || 'ESP32 Hardware Node'),
@@ -641,21 +702,31 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           room: (row.room as string) || undefined,
           evacuationAdvised: Boolean(row.evacuation_advised ?? false),
         };
-        setAlerts(prev => [newAlert, ...prev]);
+        setAlerts(prev => {
+          const exists = prev.some(a => a.id === newAlert.id);
+          if (exists) {
+            return prev.map(a => a.id === newAlert.id ? newAlert : a);
+          }
+          return [newAlert, ...prev];
+        });
 
-        // If gas leak danger, trip local modal & life-safety lockout
-        if (row.type === 'gas_leak' && row.severity === 'danger') {
+        // If real gas leak danger, trip local modal & life-safety lockout
+        // Demo alerts (is_demo === true) MUST NEVER activate the physical hardware interlock!
+        const isRealAlert = !row.is_demo;
+        const isResolved = Boolean(row.resolved_at) || row.emergency_status === 'RESOLVED';
+        if (row.type === 'gas_leak' && row.severity === 'danger' && isRealAlert && !isResolved) {
           setIsGasEmergencyModalOpen(true);
           setIsSirenMuted(false);
           emergencySiren.start();
           setGasSafetyState(prev => ({
             ...prev,
-            lockoutStatus: 'CRITICAL',
+            lockoutStatus: (row.emergency_status as any) || 'CRITICAL',
             mainContactorTripped: true,
             buzzerActive: true,
             gasClearedPendingReset: false,
             lastIncidentTimestamp: createdAt,
             rawAdc: row.gas_ppm != null ? Number(row.gas_ppm) : prev.rawAdc,
+            isSimulated: false,
           }));
           setDevices(prev =>
             prev.map(d => {
@@ -672,6 +743,18 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
               };
             })
           );
+        } else if (isRealAlert && isResolved) {
+          // Hardware safety reset confirmed via Realtime
+          emergencySiren.stop();
+          setIsGasEmergencyModalOpen(false);
+          setGasSafetyState(prev => ({
+            ...prev,
+            lockoutStatus: 'NORMAL',
+            mainContactorTripped: false,
+            buzzerActive: false,
+            gasClearedPendingReset: false,
+            lastResetTimestamp: (row.resolved_at as string) || new Date().toISOString(),
+          }));
         }
       }
     });
@@ -1182,10 +1265,10 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     if (target.type === 'unused' || target.relayChannel === 4) return;
 
     // Safety Inhibit Check: Enforce lockout during gas danger or pending reset
+    // Demo alerts/simulations must NEVER activate physical hardware lockouts!
     const isLockoutActive = 
       telemetry.gasStatus === 'danger' || 
-      gasSafetyState.lockoutStatus === 'EMERGENCY_LOCKOUT' || 
-      gasSafetyState.lockoutStatus === 'LOCKOUT_PENDING_RESET';
+      ((gasSafetyState.lockoutStatus === 'EMERGENCY_LOCKOUT' || gasSafetyState.lockoutStatus === 'LOCKOUT_PENDING_RESET') && !gasSafetyState.isSimulated);
 
     if (isLockoutActive && state === true) {
       const reasonMsg = gasSafetyState.lockoutStatus === 'LOCKOUT_PENDING_RESET'
@@ -1218,7 +1301,8 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       telemetry.gasStatus,
       source,
       user?.id,
-      gasSafetyState.lockoutStatus
+      gasSafetyState.lockoutStatus,
+      gasSafetyState.isSimulated
     );
 
     const cmdTimestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -1271,7 +1355,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         })
       );
     }
-  }, [devices, hardwareBridge, telemetry.gasStatus, user?.id, gasSafetyState.lockoutStatus]);
+  }, [devices, hardwareBridge, telemetry.gasStatus, user?.id, gasSafetyState.lockoutStatus, gasSafetyState.isSimulated]);
 
   // Primary Device Toggle Switch with Authenticated Supabase-to-ESP32 Hardware Pipeline
   const toggleDevice = useCallback(async (id: string) => {
@@ -1318,7 +1402,8 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       telemetry.gasStatus,
       'manual',
       user?.id,
-      gasSafetyState.lockoutStatus
+      gasSafetyState.lockoutStatus,
+      gasSafetyState.isSimulated
     );
 
     const cmdTimestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -1415,14 +1500,13 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       };
       setAlerts(aPrev => [alert, ...aPrev]);
     }
-  }, [devices, hardwareBridge, telemetry.gasStatus, user?.id, gasSafetyState.lockoutStatus]);
+  }, [devices, hardwareBridge, telemetry.gasStatus, user?.id, gasSafetyState.lockoutStatus, gasSafetyState.isSimulated]);
 
   // Master Control: All Devices ON / All Devices OFF with Hardware ACK verification
   const setAllDevices = useCallback(async (state: boolean) => {
     const isLockoutActive = 
       telemetry.gasStatus === 'danger' || 
-      gasSafetyState.lockoutStatus === 'EMERGENCY_LOCKOUT' || 
-      gasSafetyState.lockoutStatus === 'LOCKOUT_PENDING_RESET';
+      ((gasSafetyState.lockoutStatus === 'EMERGENCY_LOCKOUT' || gasSafetyState.lockoutStatus === 'LOCKOUT_PENDING_RESET') && !gasSafetyState.isSimulated);
 
     if (isLockoutActive && state === true) {
       const alert: SystemAlert = {
@@ -1475,7 +1559,8 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         telemetry.gasStatus,
         'master',
         user?.id,
-        gasSafetyState.lockoutStatus
+        gasSafetyState.lockoutStatus,
+        gasSafetyState.isSimulated
       );
 
       const cmdTimestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -1525,7 +1610,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         })
       );
     }
-  }, [devices, hardwareBridge, telemetry.gasStatus, user?.id, gasSafetyState.lockoutStatus]);
+  }, [devices, hardwareBridge, telemetry.gasStatus, user?.id, gasSafetyState.lockoutStatus, gasSafetyState.isSimulated]);
 
   // Request browser push notification permission
   const requestPushPermission = useCallback(async () => {
@@ -1737,13 +1822,14 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // Re-arms main contactor. Relays 1-3 remain OFF as fail-safe!
   const authorizeSafetyReset = useCallback(async (authorizedBy: string = 'Authorized Safety Operator') => {
     // 1. Safety verification check
-    if (telemetry.gasStatus === 'danger' || (gasSafetyState.rawAdc && gasSafetyState.rawAdc >= 1200)) {
+    if (telemetry.gasStatus === 'danger' || (gasSafetyState.rawAdc && gasSafetyState.rawAdc >= 900)) {
       const rejectAlert: SystemAlert = {
         id: `reset-rejected-${Date.now()}`,
         type: 'gas_leak',
         severity: 'danger',
+        emergencyStatus: 'CRITICAL',
         title: 'Safety Reset REJECTED: Active Gas Hazard',
-        description: `Manual safety reset was denied. MQ-2 sensor still detects dangerous gas levels (${telemetry.gasPpm} indicative index). Clear gas condition must be verified before reset can proceed.`,
+        description: `Manual safety reset was denied. MQ-2 sensor detects dangerous gas levels (${gasSafetyState.rawAdc ?? telemetry.gasPpm} ADC). Clear gas condition (< 900 ADC) must be verified before reset can proceed.`,
         timestamp: 'Just now',
         isDemo: !import.meta.env.PROD && Boolean(import.meta.env.VITE_DEMO_MODE === 'true'),
         acknowledged: false,
@@ -1753,9 +1839,34 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return;
     }
 
+    // 2. Submit server-side reset validation to Gateway (if real hardware mode)
+    if (user?.id && !gasSafetyState.isSimulated) {
+      const resetResult = await resolveGasAlertsInSupabase(user.id, authorizedBy).catch(err => ({
+        success: false,
+        error: err?.message || 'Gateway connection error',
+      }));
+
+      if (!resetResult.success) {
+        const rejectAlert: SystemAlert = {
+          id: `reset-rejected-${Date.now()}`,
+          type: 'gas_leak',
+          severity: 'danger',
+          emergencyStatus: 'CRITICAL',
+          title: 'Safety Reset REJECTED by Gateway',
+          description: resetResult.error || 'Gateway rejected safety reset. Atmosphere condition not safe or ESP32 node offline.',
+          timestamp: 'Just now',
+          isDemo: false,
+          acknowledged: false,
+          source: 'Gateway Safety Verification',
+        };
+        setAlerts(prev => [rejectAlert, ...prev]);
+        return;
+      }
+    }
+
     const nowIso = new Date().toISOString();
 
-    // 2. Disarm lockout & stop acoustic sirens
+    // 3. Disarm lockout & stop acoustic sirens
     emergencySiren.stop();
     setIsGasEmergencyModalOpen(false);
     setIsSirenMuted(false);
@@ -1792,7 +1903,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       emergencyState: resetState,
     }));
 
-    // 3. Record verified safety reset audit in alerts & Supabase
+    // 4. Record verified safety reset audit in alerts & Supabase
     const resetAuditAlert: SystemAlert = {
       id: `safety-reset-${Date.now()}`,
       type: 'device_offline',
@@ -1801,12 +1912,22 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       description: `Life-safety lockout cleared by authorized operator (${authorizedBy}). Gas-free condition independently verified. Main contactor re-armed. Electrical relays 1-3 remain OFF as fail-safe until explicitly commanded.`,
       timestamp: 'Just now',
       isDemo: gasSafetyState.isSimulated,
-      acknowledged: false,
+      acknowledged: true,
+      emergencyStatus: 'RESOLVED',
+      resolvedTimestamp: nowIso,
       source: 'Life-Safety Verification Protocol',
       actionTaken: 'Status: NORMAL. Main contactor re-energized. Circuit safety audit logged.',
     };
 
-    setAlerts(prev => [resetAuditAlert, ...prev]);
+    // Mark active real gas alerts in local state as resolved
+    setAlerts(prev => [
+      resetAuditAlert,
+      ...prev.map(a =>
+        a.type === 'gas_leak' && !a.isDemo && (a.emergencyStatus !== 'RESOLVED' || !a.resolvedTimestamp)
+          ? { ...a, emergencyStatus: 'RESOLVED' as const, resolvedTimestamp: nowIso, acknowledged: true }
+          : a
+      ),
+    ]);
 
     if (user?.id) {
       await insertAlertToSupabase(user.id, resetAuditAlert).catch(err => {
@@ -2269,7 +2390,12 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setAlerts(prev => 
       prev.map(a => (a.id === id ? { ...a, acknowledged: true } : a))
     );
-  }, []);
+    if (user?.id) {
+      acknowledgeAlertInSupabase(user.id, id).catch(err => {
+        console.warn('Failed to update alert acknowledgement in Supabase:', err);
+      });
+    }
+  }, [user?.id]);
 
   const dismissAlert = useCallback((id: string) => {
     setAlerts(prev => prev.filter(a => a.id !== id));

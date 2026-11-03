@@ -158,43 +158,58 @@ serve(async (req: Request) => {
       );
     }
 
-    // Hash provided token with SHA-256 to verify against device_tokens table
+    let authenticatedUserId = '';
+    let authenticatedHomeId = '';
+    let authenticatedNodeId = 'ESP32-WROOM-32-NODE-01';
+
+    // 1. Try Device Token Authentication (Hardware ESP32 Node)
     const tokenHash = await sha256Hex(providedToken);
-    const { data: dbToken, error: tokenError } = await supabase
+    const { data: dbToken } = await supabase
       .from('device_tokens')
       .select('id, user_id, home_id, device_node_id, is_active')
       .eq('token_hash', tokenHash)
       .eq('is_active', true)
       .maybeSingle();
 
-    if (tokenError) {
-      console.error('[GATEWAY ERROR] Database query error while verifying device token:', tokenError.message);
-      return new Response(
-        JSON.stringify({ error: 'Database error validating authentication credentials' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    if (dbToken?.user_id && dbToken?.home_id) {
+      authenticatedUserId = dbToken.user_id;
+      authenticatedHomeId = dbToken.home_id;
+      authenticatedNodeId = dbToken.device_node_id || 'ESP32-WROOM-32-NODE-01';
+
+      // Asynchronously update last_used_at timestamp
+      supabase
+        .from('device_tokens')
+        .update({ last_used_at: new Date().toISOString() })
+        .eq('id', dbToken.id)
+        .then(({ error }: { error: any }) => {
+          if (error) console.warn('[GATEWAY WARN] Failed to update token last_used_at:', error.message);
+        });
+    } else {
+      // 2. Try User JWT Authentication (e.g. Authorized Operator on Web Dashboard)
+      const { data: userData, error: userError } = await supabase.auth.getUser(providedToken);
+      if (userData?.user?.id && !userError) {
+        authenticatedUserId = userData.user.id;
+        const { data: homeData } = await supabase
+          .from('homes')
+          .select('id')
+          .eq('user_id', authenticatedUserId)
+          .limit(1)
+          .maybeSingle();
+
+        if (homeData?.id) {
+          authenticatedHomeId = homeData.id;
+          authenticatedNodeId = 'WEB-DASHBOARD-OPERATOR';
+        }
+      }
     }
 
-    if (!dbToken || !dbToken.user_id || !dbToken.home_id) {
-      console.warn(`[GATEWAY AUTH] Authentication rejected: Invalid or inactive device token (SHA-256: ${tokenHash.substring(0, 10)}...)`);
+    if (!authenticatedUserId || !authenticatedHomeId) {
+      console.warn(`[GATEWAY AUTH] Authentication rejected: Invalid device token or user session`);
       return new Response(
-        JSON.stringify({ error: 'Unauthorized: Invalid or inactive device token' }),
+        JSON.stringify({ error: 'Unauthorized: Invalid device token or user session' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-
-    const authenticatedUserId = dbToken.user_id;
-    const authenticatedHomeId = dbToken.home_id;
-    const authenticatedNodeId = dbToken.device_node_id || 'ESP32-WROOM-32-NODE-01';
-
-    // Asynchronously update last_used_at timestamp
-    supabase
-      .from('device_tokens')
-      .update({ last_used_at: new Date().toISOString() })
-      .eq('id', dbToken.id)
-      .then(({ error }: { error: any }) => {
-        if (error) console.warn('[GATEWAY WARN] Failed to update token last_used_at:', error.message);
-      });
 
     const url = new URL(req.url);
     const action = url.searchParams.get('action') || 'telemetry';
@@ -363,7 +378,8 @@ serve(async (req: Request) => {
           .eq('user_id', authenticatedUserId)
           .eq('home_id', authenticatedHomeId)
           .eq('type', 'sensor_fault')
-          .eq('acknowledged', false)
+          .is('resolved_at', null)
+          .eq('is_demo', false)
           .limit(1)
           .maybeSingle();
 
@@ -400,14 +416,15 @@ serve(async (req: Request) => {
           .eq('user_id', authenticatedUserId)
           .eq('home_id', authenticatedHomeId);
 
-        // Check if active critical gas alert exists
+        // Check if active real unresolved critical gas alert exists
         const { data: existingCritical } = await supabase
           .from('alerts')
           .select('id, emergency_status')
           .eq('user_id', authenticatedUserId)
           .eq('home_id', authenticatedHomeId)
           .eq('type', 'gas_leak')
-          .eq('acknowledged', false)
+          .is('resolved_at', null)
+          .or('is_demo.is.null,is_demo.eq.false')
           .limit(1)
           .maybeSingle();
 
@@ -459,7 +476,8 @@ serve(async (req: Request) => {
           .eq('user_id', authenticatedUserId)
           .eq('home_id', authenticatedHomeId)
           .eq('type', 'gas_leak')
-          .eq('acknowledged', false);
+          .is('resolved_at', null)
+          .or('is_demo.is.null,is_demo.eq.false');
       }
 
       console.log(
@@ -492,7 +510,7 @@ serve(async (req: Request) => {
           source,
           nonce,
           created_at,
-          devices!inner (
+          devices (
             id,
             home_id,
             device_slug,
@@ -504,7 +522,6 @@ serve(async (req: Request) => {
         `)
         .eq('status', 'pending')
         .eq('user_id', authenticatedUserId)
-        .eq('devices.home_id', authenticatedHomeId)
         .order('created_at', { ascending: true })
         .limit(10);
 
@@ -516,22 +533,70 @@ serve(async (req: Request) => {
         );
       }
 
-      const mappedCommands = (commands || []).map((cmd: any) => ({
-        command_id: cmd.id,
-        device_id: cmd.device_id,
-        device_slug: cmd.devices?.device_slug,
-        device_name: cmd.devices?.name,
-        relay_channel: cmd.devices?.relay_channel,
-        gpio_pin: cmd.devices?.gpio_pin,
-        action: cmd.action,
-        nonce: cmd.nonce,
-        created_at: cmd.created_at,
-      }));
+      // Life-Safety Gate: Check if an active unresolved real gas hazard exists for this user
+      // Matches SQL trigger: (is_demo IS FALSE OR is_demo IS NULL) AND (resolved_at IS NULL OR emergency_status != 'RESOLVED')
+      const { data: activeGasHazards } = await supabase
+        .from('alerts')
+        .select('id, emergency_status, resolved_at, is_demo')
+        .eq('user_id', authenticatedUserId)
+        .eq('type', 'gas_leak')
+        .eq('severity', 'danger')
+        .or('is_demo.is.null,is_demo.eq.false')
+        .limit(10);
+
+      const isGasEmergencyActive = Boolean(
+        activeGasHazards?.some(
+          a => (!a.resolved_at || a.emergency_status !== 'RESOLVED') && (a.is_demo === false || a.is_demo == null)
+        )
+      );
+
+      const dispatchedCommands: any[] = [];
+
+      for (const cmd of (commands || [])) {
+        const actionUpper = (cmd.action || '').toUpperCase().trim();
+        const isSafeDeEnergizing = ['OFF', '0', 'FALSE', 'STOP', 'DISABLE', 'EMERGENCY_STOP'].includes(actionUpper);
+
+        if (isGasEmergencyActive && !isSafeDeEnergizing) {
+          // Auto-reject stale or pending energizing commands during active gas emergency
+          console.warn(`[GATEWAY INTERLOCK] Auto-rejecting pending command ${cmd.id} (${cmd.action}) due to active gas hazard`);
+          await supabase
+            .from('device_commands')
+            .update({
+              status: 'rejected_gas_safety',
+              acknowledged_at: new Date().toISOString(),
+              error_message: 'Gateway rejected dispatch: Real combustible gas emergency active. Electrical relay switching prohibited.',
+            })
+            .eq('id', cmd.id)
+            .eq('user_id', authenticatedUserId);
+          continue;
+        }
+
+        const dev = Array.isArray(cmd.devices) ? cmd.devices[0] : (cmd.devices || {});
+        if (dev?.home_id && authenticatedHomeId && dev.home_id !== authenticatedHomeId) {
+          continue;
+        }
+
+        const relayChannel = Number(dev?.relay_channel) || 1;
+        const gpioPin = Number(dev?.gpio_pin) || (relayChannel === 1 ? 14 : relayChannel === 2 ? 25 : relayChannel === 3 ? 26 : -1);
+
+        dispatchedCommands.push({
+          command_id: cmd.id,
+          device_id: cmd.device_id,
+          device_slug: dev?.device_slug,
+          device_name: dev?.name,
+          relay_channel: relayChannel,
+          gpio_pin: gpioPin,
+          action: cmd.action,
+          nonce: cmd.nonce,
+          created_at: cmd.created_at,
+        });
+      }
 
       return new Response(
         JSON.stringify({
-          commands: mappedCommands,
-          count: mappedCommands.length,
+          commands: dispatchedCommands,
+          count: dispatchedCommands.length,
+          gas_lockout_active: isGasEmergencyActive,
           server_time: new Date().toISOString(),
         }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -609,7 +674,10 @@ serve(async (req: Request) => {
       }
 
       // 2. Validate home ownership
-      const commandHomeId = (commandRecord as any).devices?.home_id;
+      const devRecord = Array.isArray((commandRecord as any).devices)
+        ? (commandRecord as any).devices[0]
+        : (commandRecord as any).devices;
+      const commandHomeId = devRecord?.home_id;
       if (commandHomeId && commandHomeId !== authenticatedHomeId) {
         return new Response(
           JSON.stringify({ error: 'Forbidden: Command target device does not belong to authenticated home' }),
@@ -720,9 +788,243 @@ serve(async (req: Request) => {
       }
 
       const resetSource = body.source || 'physical_button_gpio0';
+      const now = Date.now();
+      const MAX_STALE_MS = 60 * 1000; // 60 seconds
+
+      // 1. Verify ESP32 Heartbeat Freshness from device_status
+      const { data: statusRows, error: statusErr } = await supabase
+        .from('device_status')
+        .select('online, last_heartbeat')
+        .eq('user_id', authenticatedUserId)
+        .order('last_heartbeat', { ascending: false })
+        .limit(1);
+
+      const latestStatus = statusRows?.[0];
+      if (statusErr || !latestStatus) {
+        console.warn(`[SAFETY RESET REJECTED] No device status found for user ${authenticatedUserId}`);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: 'SAFETY_RESET_REJECTED: ESP32 hardware status unavailable. Cannot confirm device health.',
+          }),
+          { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Explicitly require online === true (reject false, null, undefined)
+      if (latestStatus.online !== true) {
+        console.warn(`[SAFETY RESET REJECTED] ESP32 node is offline (device_status.online is not true)`);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: 'SAFETY_RESET_REJECTED: ESP32 node is currently offline. Hardware must be connected and active to perform safety reset.',
+          }),
+          { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Explicitly require valid, non-null last_heartbeat timestamp (no fallback to updated_at)
+      if (!latestStatus.last_heartbeat || typeof latestStatus.last_heartbeat !== 'string') {
+        console.warn(`[SAFETY RESET REJECTED] ESP32 last_heartbeat is null or missing`);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: 'SAFETY_RESET_REJECTED: Missing or null ESP32 last_heartbeat timestamp. Cannot confirm node connectivity.',
+          }),
+          { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const heartbeatTimestamp = new Date(latestStatus.last_heartbeat).getTime();
+      if (Number.isNaN(heartbeatTimestamp)) {
+        console.warn(`[SAFETY RESET REJECTED] ESP32 last_heartbeat is an invalid date string`);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: 'SAFETY_RESET_REJECTED: Invalid ESP32 last_heartbeat format. Cannot verify node health.',
+          }),
+          { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const heartbeatAgeMs = now - heartbeatTimestamp;
+      if (heartbeatAgeMs > MAX_STALE_MS || heartbeatAgeMs < 0) {
+        console.warn(`[SAFETY RESET REJECTED] ESP32 heartbeat is stale (${Math.round(heartbeatAgeMs / 1000)}s old)`);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: `SAFETY_RESET_REJECTED: ESP32 heartbeat is stale (${Math.round(heartbeatAgeMs / 1000)}s old). Fresh hardware heartbeat (≤ 60s) required.`,
+          }),
+          { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // 2. Verify Fresh Real Telemetry from sensor_readings
+      const { data: readingRows, error: readingErr } = await supabase
+        .from('sensor_readings')
+        .select('gas_raw_adc, gas_status, recorded_at')
+        .eq('user_id', authenticatedUserId)
+        .eq('home_id', authenticatedHomeId)
+        .eq('is_demo', false)
+        .order('recorded_at', { ascending: false })
+        .limit(1);
+
+      const latestReading = readingRows?.[0];
+      if (readingErr || !latestReading) {
+        console.warn(`[SAFETY RESET REJECTED] No verified physical sensor readings found for user ${authenticatedUserId}`);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: 'SAFETY_RESET_REJECTED: No verified physical telemetry readings found. Cannot verify atmospheric clearance.',
+          }),
+          { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      if (!latestReading.recorded_at || typeof latestReading.recorded_at !== 'string') {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: 'SAFETY_RESET_REJECTED: Missing recorded_at timestamp on latest sensor reading.',
+          }),
+          { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const telemetryAgeMs = now - new Date(latestReading.recorded_at).getTime();
+      if (telemetryAgeMs > MAX_STALE_MS || telemetryAgeMs < 0) {
+        console.warn(`[SAFETY RESET REJECTED] Sensor telemetry is stale (${Math.round(telemetryAgeMs / 1000)}s old)`);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: `SAFETY_RESET_REJECTED: Latest sensor reading is stale (${Math.round(telemetryAgeMs / 1000)}s old). Fresh telemetry required.`,
+          }),
+          { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // 3. Validate gas_status against explicitly allowed healthy/safe contract
+      // Firmware telemetry contract: 'warming_up' | 'sensor_fault' | 'warning' | 'danger' | 'safe'
+      // ONLY 'safe' is allowed for authorized safety reset. Reject null, unknown, warning, danger, warming_up, sensor_fault.
+      const ALLOWED_SAFE_GAS_STATUS = 'safe';
+      const rawGasStatus = typeof latestReading.gas_status === 'string' ? latestReading.gas_status.trim().toLowerCase() : null;
+
+      if (!rawGasStatus) {
+        console.warn(`[SAFETY RESET REJECTED] Telemetry gas_status is null or missing`);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: 'SAFETY_RESET_REJECTED: Gas sensor status is missing or null. Cannot confirm safe atmosphere.',
+          }),
+          { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      if (rawGasStatus === 'warming_up') {
+        console.warn(`[SAFETY RESET REJECTED] MQ-2 sensor is still warming up`);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: 'SAFETY_RESET_REJECTED: MQ-2 sensor is warming up. Thermal stabilization required before reset.',
+          }),
+          { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      if (rawGasStatus === 'sensor_fault') {
+        console.warn(`[SAFETY RESET REJECTED] MQ-2 sensor fault active`);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: 'SAFETY_RESET_REJECTED: Sensor fault detected on MQ-2 input. Inspect wiring on GPIO 34 before reset.',
+          }),
+          { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      if (rawGasStatus === 'warning') {
+        console.warn(`[SAFETY RESET REJECTED] MQ-2 sensor is in warning state`);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: 'SAFETY_RESET_REJECTED: Combustible gas is in WARNING state (ADC between 900 and 1599). Atmosphere is not safe.',
+          }),
+          { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      if (rawGasStatus === 'danger') {
+        console.warn(`[SAFETY RESET REJECTED] MQ-2 sensor is in danger state`);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: 'SAFETY_RESET_REJECTED: Combustible gas is in DANGER state. Reset is prohibited.',
+          }),
+          { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      if (rawGasStatus !== ALLOWED_SAFE_GAS_STATUS) {
+        console.warn(`[SAFETY RESET REJECTED] Unknown gas_status: ${rawGasStatus}`);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: `SAFETY_RESET_REJECTED: Unrecognized gas sensor status '${rawGasStatus}'. Only verified 'safe' telemetry is permitted.`,
+          }),
+          { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // 4. Verify MQ-2 ADC is Strictly Below Clearance Threshold (< 900) and Valid (>= 45)
+      const currentAdc = latestReading.gas_raw_adc;
+      if (currentAdc == null) {
+        console.warn(`[SAFETY RESET REJECTED] MQ-2 gas_raw_adc is null`);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: 'SAFETY_RESET_REJECTED: MQ-2 raw ADC telemetry is null. Direct sensor reading required.',
+          }),
+          { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      if (currentAdc < 45) {
+        console.warn(`[SAFETY RESET REJECTED] MQ-2 raw ADC (${currentAdc}) below open-circuit fault threshold (45)`);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: `SAFETY_RESET_REJECTED: MQ-2 raw ADC (${currentAdc}) indicates open circuit or disconnected sensor wire (< 45 ADC).`,
+          }),
+          { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      if (currentAdc >= 900) {
+        console.warn(`[SAFETY RESET REJECTED] Combustible gas ADC (${currentAdc}) is at or above clearance threshold (900)`);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: `SAFETY_RESET_REJECTED: Combustible gas reading (${currentAdc} ADC) is at or above clearance threshold (900 ADC). Atmosphere is not safe.`,
+          }),
+          { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Also validate request body ADC if provided
+      const bodyAdc = parseAdcReading(body.raw_adc);
+      if (bodyAdc != null && bodyAdc >= 900) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: `SAFETY_RESET_REJECTED: Provided ADC reading (${bodyAdc}) exceeds clearance threshold (900 ADC).`,
+          }),
+          { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // 5. ALL VERIFICATIONS PASSED: Disarm Lockout & Resolve Alerts Server-Side
       const resolvedAt = new Date().toISOString();
 
-      // Resolve all active gas_leak alerts
       const { error: resolveErr } = await supabase
         .from('alerts')
         .update({
@@ -733,14 +1035,11 @@ serve(async (req: Request) => {
         .eq('user_id', authenticatedUserId)
         .eq('home_id', authenticatedHomeId)
         .eq('type', 'gas_leak')
-        .eq('acknowledged', false);
+        .or('is_demo.is.null,is_demo.eq.false');
 
       if (resolveErr) {
         console.error(`[SAFETY RESET ERROR] Failed to resolve gas alerts:`, resolveErr.message);
       }
-
-      const validatedResetAdc = parseAdcReading(body.raw_adc);
-      const rawAdcNote = validatedResetAdc != null ? ` (Raw ADC: ${validatedResetAdc})` : '';
 
       // Log recovery alert in database
       await supabase.from('alerts').insert({
@@ -751,20 +1050,21 @@ serve(async (req: Request) => {
         severity: 'info',
         emergency_status: 'RESOLVED',
         title: 'Safety Reset Completed – Normal Operation Restored',
-        description: `Atmosphere confirmed safe below clearance threshold (< 900 ADC)${rawAdcNote}. System lockout disarmed and main contactor restored via authorized safety reset (${resetSource}). Relays remain OFF.`,
+        description: `Atmosphere independently verified safe (< 900 ADC, latest reading: ${currentAdc} ADC). System lockout disarmed and main contactor restored via authorized safety reset (${resetSource}). Relays remain OFF until commanded.`,
         acknowledged: true,
         resolved_at: resolvedAt,
         is_demo: false,
         source: resetSource,
       });
 
-      console.log(`[SAFETY RESET] Completed for user ${authenticatedUserId} via ${resetSource}`);
+      console.log(`[SAFETY RESET APPROVED] Completed for user ${authenticatedUserId} via ${resetSource} (Verified ADC: ${currentAdc})`);
 
       return new Response(
         JSON.stringify({
           success: true,
           message: 'System emergency lockout disarmed and normal operation restored',
           resolved_at: resolvedAt,
+          verified_raw_adc: currentAdc,
         }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
@@ -790,7 +1090,7 @@ serve(async (req: Request) => {
         .eq('user_id', authenticatedUserId)
         .eq('home_id', authenticatedHomeId)
         .eq('type', 'gas_leak')
-        .eq('acknowledged', false);
+        .or('is_demo.is.null,is_demo.eq.false');
 
       console.log(`[SIREN SILENCED] Mobile siren silenced for user ${authenticatedUserId}. Emergency remains ACTIVE.`);
 

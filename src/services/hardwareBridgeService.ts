@@ -1,6 +1,6 @@
 import type { Device, HardwareBridgeStatus, GasSafetyLevel, EmergencyLockoutStatus } from '../types';
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabaseClient';
-import { resolveDeviceInDatabase, isUuid } from './deviceResolver';
+import { resolveDeviceInDatabase, isUuid, evaluateGasSafetyLockout } from './deviceResolver';
 
 export interface AuthenticatedDeviceCommandPayload {
   commandId: string;
@@ -68,7 +68,8 @@ export async function dispatchAuthenticatedDeviceCommand(
   gasStatus: GasSafetyLevel,
   source: 'manual' | 'schedule' | 'master' | 'safety_override' = 'manual',
   userId?: string,
-  lockoutStatus?: EmergencyLockoutStatus
+  lockoutStatus?: EmergencyLockoutStatus,
+  isSimulatedLockout: boolean = false
 ): Promise<HardwareExecutionResult> {
   const nonce = `n_${Math.random().toString(36).substring(2, 9)}`;
   const commandId = `cmd_${Date.now()}_${device.id}`;
@@ -93,24 +94,21 @@ export async function dispatchAuthenticatedDeviceCommand(
   // Priority 1: LIFE-SAFETY GAS LEAKAGE INTERLOCK & EMERGENCY LOCKOUT
   // Inhibit any attempt to turn ON ordinary electrical relays during a gas hazard
   // or while the system is locked out awaiting safety reset.
+  //
+  // CRITICAL SAFETY REQUIREMENT:
+  // Demo alerts / simulated lockout must NEVER activate or clear the physical
+  // hardware interlock. Only genuine hardware danger (or genuine hardware lockout)
+  // inhibits relay commands to the physical ESP32 node.
   // -------------------------------------------------------------------------
-  const isLockoutActive =
-    gasStatus === 'danger' ||
-    lockoutStatus === 'EMERGENCY_LOCKOUT' ||
-    lockoutStatus === 'LOCKOUT_PENDING_RESET';
-
-  if (isLockoutActive && targetState === true) {
-    const reasonMsg = lockoutStatus === 'LOCKOUT_PENDING_RESET'
-      ? 'COMMAND REJECTED: System is in LOCKOUT_PENDING_RESET. Combustible gas cleared below threshold, but manual safety verification and reset is required before circuits can be energized.'
-      : 'COMMAND BLOCKED: Electrical relay activation is inhibited during combustible gas alert (spark ignition hazard).';
-
+  const lockoutCheck = evaluateGasSafetyLockout(gasStatus, lockoutStatus, isSimulatedLockout);
+  if (lockoutCheck.isBlocked && targetState === true) {
     return {
       success: false,
       actualDeviceState: device.state, // Remains unchanged
       roundTripMs: 12,
-      statusCode: 403,
-      statusText: 'SAFETY_INTERLOCK_ACTIVATED',
-      errorMessage: reasonMsg,
+      statusCode: lockoutCheck.statusCode || 403,
+      statusText: lockoutCheck.statusText || 'SAFETY_INTERLOCK_ACTIVATED',
+      errorMessage: lockoutCheck.reason,
       confirmedByHardware: false,
       isSimulated: false,
       payloadSent,
