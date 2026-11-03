@@ -6,13 +6,12 @@ import { useSmartHome } from '../../hooks/useSmartHome';
 
 export const DemoNotice: React.FC = () => {
   const [expanded, setExpanded] = useState<boolean>(false);
-  const { isAuthenticated, settings } = useSmartHome();
+  const { isAuthenticated } = useSmartHome();
 
   const isDemoExplicitlyEnabled = import.meta.env.VITE_DEMO_MODE === 'true';
 
-  // In production mode (when Supabase is configured and user is authenticated),
-  // NEVER render prototype/demo simulation notices unless demo mode is explicitly enabled.
-  if (isSupabaseConfigured && isAuthenticated && !isDemoExplicitlyEnabled && !settings.demoSimulationActive) {
+  // In production, never render prototype/demo notices.
+  if (import.meta.env.PROD || !isDemoExplicitlyEnabled || (isSupabaseConfigured && isAuthenticated)) {
     return null;
   }
 

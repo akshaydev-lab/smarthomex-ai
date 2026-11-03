@@ -112,7 +112,7 @@ export interface SensorTelemetry {
   currencySymbol: string;   // '₹' or '$'
   estimatedBillToday: number;
   estimatedBillMonth: number;
-  ina219Status: 'connected' | 'calibrated' | 'error' | 'demo_mode';
+  ina219Status: 'connected' | 'calibrated' | 'disconnected' | 'error' | 'demo_mode';
   gasPpm: number | null;      // MQ-2 Sensor Indicative Index (null if raw ADC only or disconnected)
   gasRawAdc?: number | null;  // MQ-2 Raw 12-bit ADC (0 - 4095)
   gasStatus: GasSafetyLevel;

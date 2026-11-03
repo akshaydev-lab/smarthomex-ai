@@ -67,7 +67,7 @@ export const GasSensorCard: React.FC<{ telemetry: SensorTelemetry }> = ({ teleme
                 MQ-2 Combustible Gas & Smoke Sensor
               </h3>
               <Badge variant={telemetry.isHardwareConnected ? 'emerald' : 'demo'} size="sm">
-                {telemetry.isHardwareConnected ? 'ESP32 GPIO 34' : 'Demo Emulation'}
+                {telemetry.isHardwareConnected ? 'ESP32 GPIO 34' : (!import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true') ? 'Demo Emulation' : 'Offline / Standby'}
               </Badge>
               {isDanger && (
                 <Badge variant="rose" size="sm" pulse>CRITICAL DANGER</Badge>
@@ -255,15 +255,15 @@ export const GasSensorCard: React.FC<{ telemetry: SensorTelemetry }> = ({ teleme
               </span>
             </div>
             <button
-              onClick={isDanger ? toggleSirenMute : () => triggerGasLeakAlert(485)}
-              className={`h-8 w-8 rounded-lg flex items-center justify-center border transition-all cursor-pointer ${
+              onClick={isDanger ? toggleSirenMute : undefined}
+              className={`h-8 w-8 rounded-lg flex items-center justify-center border transition-all ${
                 isDanger
                   ? isSirenMuted
-                    ? 'bg-slate-800 border-slate-700 text-slate-400'
-                    : 'bg-rose-500/25 border-rose-500 text-rose-300 animate-pulse'
-                  : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-cyan-400'
+                    ? 'bg-slate-800 border-slate-700 text-slate-400 cursor-pointer'
+                    : 'bg-rose-500/25 border-rose-500 text-rose-300 animate-pulse cursor-pointer'
+                  : 'bg-slate-900 border-slate-800 text-slate-500 cursor-default'
               }`}
-              title={isDanger ? (isSirenMuted ? 'Unmute' : 'Mute') : 'Test Siren'}
+              title={isDanger ? (isSirenMuted ? 'Unmute Siren' : 'Mute Siren') : 'Siren Armed / Standby'}
             >
               {isDanger && isSirenMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
             </button>
@@ -278,29 +278,31 @@ export const GasSensorCard: React.FC<{ telemetry: SensorTelemetry }> = ({ teleme
           <span>Trip Threshold: 350 Indicative Index • Hysteresis: 200 Index</span>
         </div>
 
-        {/* Quick Testing Actions */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={() => triggerGasLeakAlert(485, 'Kitchen Area', false)}
-            className="px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-[11px] font-mono flex items-center gap-1 cursor-pointer"
-          >
-            <Flame className="h-3 w-3" /> Danger Test
-          </button>
+        {/* Quick Testing Actions (Development & Demo only) */}
+        {!import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true' && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => triggerGasLeakAlert(485, 'Kitchen Area', false)}
+              className="px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-[11px] font-mono flex items-center gap-1 cursor-pointer"
+            >
+              <Flame className="h-3 w-3" /> Danger Test
+            </button>
 
-          <button
-            onClick={simulateGasClearance}
-            className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[11px] font-mono flex items-center gap-1 cursor-pointer"
-          >
-            <RotateCcw className="h-3 w-3" /> Gas Cleared
-          </button>
+            <button
+              onClick={simulateGasClearance}
+              className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[11px] font-mono flex items-center gap-1 cursor-pointer"
+            >
+              <RotateCcw className="h-3 w-3" /> Gas Cleared
+            </button>
 
-          <button
-            onClick={simulateSensorFault}
-            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[11px] font-mono flex items-center gap-1 cursor-pointer"
-          >
-            <Unplug className="h-3 w-3" /> ADC &lt; 45 Fault
-          </button>
-        </div>
+            <button
+              onClick={simulateSensorFault}
+              className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[11px] font-mono flex items-center gap-1 cursor-pointer"
+            >
+              <Unplug className="h-3 w-3" /> ADC &lt; 45 Fault
+            </button>
+          </div>
+        )}
       </div>
     </Card>
   );

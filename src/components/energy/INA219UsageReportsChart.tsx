@@ -21,6 +21,7 @@ export const INA219UsageReportsChart: React.FC<{
 }> = ({ dailyData, weeklyData, monthlyData }) => {
   const [viewMode, setViewMode] = useState<'daily' | 'weekly' | 'monthly'>('daily');
   const { tariffRate, telemetry } = useSmartHome();
+  const isDemoMode = !import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true';
 
   const totalDailyKwh = dailyData.reduce((sum, d) => sum + d.kwh, 0);
   const totalDailyCost = totalDailyKwh * tariffRate;
@@ -53,7 +54,7 @@ export const INA219UsageReportsChart: React.FC<{
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-base font-bold text-slate-100">Daily, Weekly & Monthly Energy Reports</h3>
-              <Badge variant="demo" size="sm">DEMO DATA</Badge>
+              {isDemoMode && <Badge variant="demo" size="sm">DEMO DATA</Badge>}
             </div>
             <p className="text-xs text-slate-400 font-mono mt-0.5">
               Accumulated kWh & tariff billing reports computed from INA219 sensor integration
@@ -132,13 +133,20 @@ export const INA219UsageReportsChart: React.FC<{
             <TrendingDown className="h-3 w-3 text-teal-400" /> Eco Mode Savings
           </span>
           <span className="text-lg font-bold font-mono text-teal-300">
-            -18.4% vs Baseline
+            {currentKwh > 0 ? '-18.4% vs Baseline' : '--'}
           </span>
         </div>
       </div>
 
       {/* Chart Canvas */}
       <div className="h-72 w-full">
+        {currentKwh === 0 && (!dailyData.length && !weeklyData.length && !monthlyData.length) ? (
+          <div className="h-full w-full flex flex-col items-center justify-center border border-dashed border-slate-800 rounded-xl bg-slate-950/40 text-slate-400 text-xs font-mono">
+            <BarChart3 className="h-8 w-8 text-slate-600 mb-2" />
+            <p className="font-semibold text-slate-300">No energy usage reports available yet</p>
+            <p className="text-[10px] text-slate-500 mt-1">Telemetry records will aggregate daily, weekly, and monthly trends</p>
+          </div>
+        ) : (
         <ResponsiveContainer width="100%" height="100%">
           {viewMode === 'daily' ? (
             <BarChart data={dailyData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
@@ -231,6 +239,7 @@ export const INA219UsageReportsChart: React.FC<{
             </BarChart>
           )}
         </ResponsiveContainer>
+        )}
       </div>
     </Card>
   );

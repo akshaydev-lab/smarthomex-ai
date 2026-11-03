@@ -102,32 +102,34 @@ export const INITIAL_DEVICES: Device[] = [
 ];
 
 export const INITIAL_TELEMETRY: SensorTelemetry = {
-  temperature: 24.8,
-  humidity: 52,
-  voltage: 231.4,
-  busVoltageV: 231.4,
-  shuntVoltageMv: 48.0, // 0.48A * 0.1Ω * 1000 = 48.0 mV
-  current: 0.48,
-  currentMa: 480,
-  power: 111,
-  powerMw: 111072,
-  energyWh: 3840,
-  energyTodayKWh: 3.84,
+  temperature: null,
+  humidity: null,
+  voltage: null,
+  busVoltageV: null,
+  shuntVoltageMv: null,
+  current: null,
+  currentMa: null,
+  power: null,
+  powerMw: null,
+  energyWh: 0,
+  energyTodayKWh: 0,
   tariffRatePerKwh: 7.50, // Default ₹7.50 / kWh
   currencySymbol: '₹',
-  estimatedBillToday: 28.80, // 3.84 * 7.50
-  estimatedBillMonth: 864.00,
-  ina219Status: 'calibrated',
-  gasPpm: 124,
-  gasStatus: 'safe',
+  estimatedBillToday: 0,
+  estimatedBillMonth: 0,
+  ina219Status: 'disconnected',
+  gasPpm: null,
+  gasRawAdc: null,
+  gasStatus: 'warming_up',
   smokeDetected: false,
   buzzerState: false,
-  esp32Status: 'demo_mode',
+  esp32Status: 'offline',
   wifiRssi: null,
-  lastUpdated: 'Just now',
+  lastUpdated: '--',
+  isHardwareConnected: false,
 };
 
-export const INITIAL_ALERTS: SystemAlert[] = [
+export const INITIAL_ALERTS: SystemAlert[] = (!import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true') ? [
   {
     id: 'alert-1',
     type: 'gas_leak',
@@ -190,7 +192,7 @@ export const INITIAL_ALERTS: SystemAlert[] = [
     source: 'INA219 Power Monitor (I2C 0x40)',
     actionTaken: 'Logged to energy harmonics telemetry database',
   },
-];
+] : [];
 
 export const INITIAL_AUTOMATIONS: AutomationRule[] = [
   {
@@ -248,6 +250,9 @@ export const INITIAL_AUTOMATIONS: AutomationRule[] = [
 ];
 
 export function getHourlyTelemetryData(): EnergyHourlyData[] {
+  if (import.meta.env.PROD || import.meta.env.VITE_DEMO_MODE !== 'true') {
+    return [];
+  }
   return [
     { time: '00:00', powerWatts: 72, voltage: 233.1, current: 0.31, temp: 22.4, humidity: 58 },
     { time: '02:00', powerWatts: 68, voltage: 233.8, current: 0.29, temp: 21.9, humidity: 60 },
@@ -265,6 +270,9 @@ export function getHourlyTelemetryData(): EnergyHourlyData[] {
 }
 
 export function getDailyEnergyData(): EnergyDailyData[] {
+  if (import.meta.env.PROD || import.meta.env.VITE_DEMO_MODE !== 'true') {
+    return [];
+  }
   return [
     { day: 'Mon', kwh: 4.8, costEstimate: 0.72, peakWatts: 920 },
     { day: 'Tue', kwh: 5.2, costEstimate: 0.78, peakWatts: 980 },
@@ -277,6 +285,9 @@ export function getDailyEnergyData(): EnergyDailyData[] {
 }
 
 export function getWeeklyEnergyData(): EnergyWeeklyData[] {
+  if (import.meta.env.PROD || import.meta.env.VITE_DEMO_MODE !== 'true') {
+    return [];
+  }
   return [
     { week: 'Week 1', kwh: 34.2, targetKwh: 38.0, savingsPercent: 10.0 },
     { week: 'Week 2', kwh: 31.8, targetKwh: 38.0, savingsPercent: 16.3 },
@@ -286,6 +297,9 @@ export function getWeeklyEnergyData(): EnergyWeeklyData[] {
 }
 
 export function getMonthlyEnergyData(): EnergyMonthlyData[] {
+  if (import.meta.env.PROD || import.meta.env.VITE_DEMO_MODE !== 'true') {
+    return [];
+  }
   return [
     { month: 'Jan', kwh: 142.5, costEstimate: 1068.75, avgDailyKwh: 4.60, peakWatts: 1020 },
     { month: 'Feb', kwh: 128.0, costEstimate: 960.00, avgDailyKwh: 4.57, peakWatts: 980 },

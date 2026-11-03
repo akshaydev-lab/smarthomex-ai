@@ -16,6 +16,15 @@ import { Badge } from '../common/Badge';
 import { EnergyHourlyData } from '../../types';
 
 export const VoltageCurrentHistoryChart: React.FC<{ data: EnergyHourlyData[] }> = ({ data }) => {
+  const isDemoMode = !import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true';
+  const hasData = Boolean(data && data.length > 0);
+  const meanVoltage = hasData 
+    ? (data.reduce((sum, d) => sum + d.voltage, 0) / data.length).toFixed(1)
+    : null;
+  const peakCurrent = hasData
+    ? Math.max(...data.map(d => d.current)).toFixed(2)
+    : null;
+
   return (
     <Card className="p-4 sm:p-5 border-cyan-500/20">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
@@ -27,7 +36,7 @@ export const VoltageCurrentHistoryChart: React.FC<{ data: EnergyHourlyData[] }> 
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-base font-bold text-slate-100">Voltage & Current Telemetry History</h3>
               <Badge variant="cyan" size="sm">Dual-Axis INA219</Badge>
-              <Badge variant="demo" size="sm">DEMO DATA</Badge>
+              {isDemoMode && <Badge variant="demo" size="sm">DEMO DATA</Badge>}
             </div>
             <p className="text-xs text-slate-400 font-mono mt-0.5">
               Bus voltage stability & instantaneous current draw over a 24-hour cycle
@@ -47,6 +56,13 @@ export const VoltageCurrentHistoryChart: React.FC<{ data: EnergyHourlyData[] }> 
       </div>
 
       <div className="h-72 w-full">
+        {!hasData ? (
+          <div className="h-full w-full flex flex-col items-center justify-center border border-dashed border-slate-800 rounded-xl bg-slate-950/40 text-slate-400 text-xs font-mono">
+            <Activity className="h-8 w-8 text-slate-600 mb-2" />
+            <p className="font-semibold text-slate-300">No voltage/current history available</p>
+            <p className="text-[10px] text-slate-500 mt-1">Awaiting live sensor readings from ESP32 INA219</p>
+          </div>
+        ) : (
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 10, right: 15, left: -15, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
@@ -142,20 +158,21 @@ export const VoltageCurrentHistoryChart: React.FC<{ data: EnergyHourlyData[] }> 
             />
           </LineChart>
         </ResponsiveContainer>
+        )}
       </div>
 
       <div className="mt-3 pt-3 border-t border-slate-800/80 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs font-mono">
         <div className="p-2.5 rounded-lg bg-slate-900/60 border border-slate-800">
           <span className="text-[10px] text-slate-400 block">Grid Stability Score</span>
-          <span className="text-sm font-bold text-teal-300">99.7% Nominal</span>
+          <span className="text-sm font-bold text-teal-300">{hasData ? '99.7% Nominal' : '--'}</span>
         </div>
         <div className="p-2.5 rounded-lg bg-slate-900/60 border border-slate-800">
           <span className="text-[10px] text-slate-400 block">Peak Inductive Inrush</span>
-          <span className="text-sm font-bold text-amber-300">4.20 A (Motor Ignition)</span>
+          <span className="text-sm font-bold text-amber-300">{peakCurrent != null ? `${peakCurrent} A` : '--'}</span>
         </div>
         <div className="p-2.5 rounded-lg bg-slate-900/60 border border-slate-800">
           <span className="text-[10px] text-slate-400 block">Mean RMS Voltage</span>
-          <span className="text-sm font-bold text-cyan-300">231.2 V AC</span>
+          <span className="text-sm font-bold text-cyan-300">{meanVoltage != null ? `${meanVoltage} V AC` : '--'}</span>
         </div>
       </div>
     </Card>

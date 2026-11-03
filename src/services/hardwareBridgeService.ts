@@ -1,5 +1,4 @@
 import type { Device, HardwareBridgeStatus, GasSafetyLevel, EmergencyLockoutStatus } from '../types';
-import { logDeviceCommandToSupabase } from './supabaseDataService';
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabaseClient';
 
 export interface AuthenticatedDeviceCommandPayload {
@@ -344,16 +343,16 @@ export async function dispatchAuthenticatedDeviceCommand(
   }
 
   // -------------------------------------------------------------------------
-  // Fallback: Demo Mode Emulation (Only when Supabase is completely unconfigured)
+  // Fallback: Demo Mode Emulation (Only when explicitly enabled in non-production)
   // -------------------------------------------------------------------------
-  if (isSupabaseConfigured) {
+  if (import.meta.env.PROD || import.meta.env.VITE_DEMO_MODE !== 'true' || isSupabaseConfigured) {
     return {
       success: false,
       actualDeviceState: device.state,
       roundTripMs: 0,
-      statusCode: 500,
-      statusText: 'GATEWAY_ERROR',
-      errorMessage: 'Hardware command pipeline terminated without acknowledgment.',
+      statusCode: 503,
+      statusText: 'GATEWAY_UNAVAILABLE',
+      errorMessage: 'Production hardware command rejected: Real ESP32 hardware ACK required.',
       confirmedByHardware: false,
       isSimulated: false,
       payloadSent,

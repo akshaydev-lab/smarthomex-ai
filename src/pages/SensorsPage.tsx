@@ -27,7 +27,7 @@ export const SensorsPage: React.FC = () => {
     isAuthenticated,
   } = useSmartHome();
 
-  const isDemoMode = import.meta.env.VITE_DEMO_MODE === 'true';
+  const isDemoMode = !import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true';
 
   return (
     <div className="space-y-6">
@@ -44,9 +44,9 @@ export const SensorsPage: React.FC = () => {
                 <Badge variant={telemetry.isHardwareConnected ? 'emerald' : 'demo'} size="sm">
                   {telemetry.isHardwareConnected 
                     ? 'Hardware Live' 
-                    : (isSupabaseConfigured && isAuthenticated) 
-                    ? 'Hardware Offline' 
-                    : 'Demo Mode'}
+                    : (!import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true')
+                    ? 'Demo Mode' 
+                    : 'Hardware Offline'}
                 </Badge>
               </div>
               <p className="text-xs text-slate-400">
@@ -161,17 +161,18 @@ export const SensorsPage: React.FC = () => {
         {/* Sensor 5: Active Real-time Power */}
         <SensorGauge
           title="Aggregate Active Power"
-          value={totalActiveWatts}
+          value={telemetry.power != null ? telemetry.power : (telemetry.esp32Status === 'offline' ? null : totalActiveWatts)}
           unit="W"
           sensorModel="INA219 Integrated Math"
           pinInfo="P = V × I"
           icon={<Zap className="h-5 w-5" />}
           min={0}
           max={1200}
-          currentValue={totalActiveWatts}
+          currentValue={telemetry.power != null ? telemetry.power : (telemetry.esp32Status === 'offline' ? 0 : totalActiveWatts)}
           accentColor="emerald"
-          statusText="NORMAL POWER"
+          statusText={telemetry.power == null && telemetry.esp32Status === 'offline' ? 'DISCONNECTED' : 'NORMAL POWER'}
           subtitle="Real-time calculated wattage of all 4 circuits."
+          isRealHardware={telemetry.isHardwareConnected}
         />
 
         {/* Sensor 6: Cumulative Energy Today */}

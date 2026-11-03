@@ -17,7 +17,6 @@ import {
 import { useSmartHome } from '../../hooks/useSmartHome';
 import { NavigationPage } from '../../types';
 import { Badge } from '../common/Badge';
-import { isSupabaseConfigured } from '../../lib/supabaseClient';
 
 interface NavItem {
   id: NavigationPage;
@@ -28,7 +27,7 @@ interface NavItem {
 }
 
 export const Sidebar: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, onClose }) => {
-  const { currentPage, setCurrentPage, alerts, telemetry, schedules, hardwareBridge, isAuthenticated } = useSmartHome();
+  const { currentPage, setCurrentPage, alerts, telemetry, schedules, hardwareBridge } = useSmartHome();
 
   const unreadAlerts = alerts.filter(a => !a.acknowledged).length;
   const activeSchedules = schedules ? schedules.filter(s => s.enabled).length : 0;
@@ -164,9 +163,9 @@ export const Sidebar: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ is
               <Badge variant={hardwareBridge.esp32Connected ? 'emerald' : 'demo'} size="sm">
                 {hardwareBridge.esp32Connected 
                   ? 'Connected' 
-                  : (isSupabaseConfigured && isAuthenticated) 
-                  ? 'Offline' 
-                  : 'Demo Mode'}
+                  : (!import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true')
+                  ? 'Demo Mode' 
+                  : 'Offline'}
               </Badge>
             </div>
 

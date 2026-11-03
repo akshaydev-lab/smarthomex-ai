@@ -30,6 +30,7 @@ export const HardwareBridgeController: React.FC = () => {
   } = useSmartHome();
 
   const [expanded, setExpanded] = useState<boolean>(true);
+  const isDemoMode = !import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true';
 
   return (
     <Card className="mb-6 border border-cyan-500/30 bg-gradient-to-r from-slate-900/95 via-slate-950 to-slate-900/95 shadow-xl">
@@ -74,7 +75,7 @@ export const HardwareBridgeController: React.FC = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {/* 1. ESP32 Hardware Status Toggle */}
             <div className={`p-3 rounded-xl border transition-all ${
-              telemetry.esp32Status === 'demo_mode'
+              isDemoMode && telemetry.esp32Status === 'demo_mode'
                 ? 'bg-amber-950/20 border-amber-500/30'
                 : hardwareBridge.esp32Connected 
                 ? 'bg-slate-900/60 border-emerald-500/30' 
@@ -85,13 +86,13 @@ export const HardwareBridgeController: React.FC = () => {
                   <Cpu className="h-4 w-4 text-cyan-400" /> ESP32 Node
                 </span>
                 <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full ${
-                  telemetry.esp32Status === 'demo_mode' && import.meta.env.VITE_DEMO_MODE === 'true'
+                  isDemoMode && telemetry.esp32Status === 'demo_mode'
                     ? 'bg-amber-500/20 text-amber-300 font-semibold'
                     : hardwareBridge.esp32Connected 
                     ? 'bg-emerald-500/20 text-emerald-300' 
                     : 'bg-rose-500/20 text-rose-300 font-bold'
                 }`}>
-                  {telemetry.esp32Status === 'demo_mode' && import.meta.env.VITE_DEMO_MODE === 'true'
+                  {isDemoMode && telemetry.esp32Status === 'demo_mode'
                     ? 'DEMO SIMULATION' 
                     : hardwareBridge.esp32Connected 
                     ? 'HARDWARE ONLINE' 
@@ -99,28 +100,30 @@ export const HardwareBridgeController: React.FC = () => {
                 </span>
               </div>
               <p className="text-[11px] text-slate-400 mb-2.5">
-                {telemetry.esp32Status === 'demo_mode' && import.meta.env.VITE_DEMO_MODE === 'true'
+                {isDemoMode && telemetry.esp32Status === 'demo_mode'
                   ? 'Running in Demo Mode. Physical ESP32 is NOT connected. Actions are emulated in browser.'
                   : hardwareBridge.esp32Connected 
                   ? 'ESP32 controller node acknowledging relay commands over gateway.'
                   : 'ESP32 node unreachable. UI will reject state flips with timeout error.'}
               </p>
-              <button
-                onClick={() => updateHardwareBridge({ esp32Connected: !hardwareBridge.esp32Connected })}
-                className={`w-full py-1 px-2 rounded-lg text-xs font-semibold cursor-pointer border transition-all ${
-                  telemetry.esp32Status === 'demo_mode' && import.meta.env.VITE_DEMO_MODE === 'true'
-                    ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
-                    : hardwareBridge.esp32Connected
-                    ? 'bg-slate-800 hover:bg-rose-500/20 text-slate-300 hover:text-rose-300 border-slate-700'
-                    : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30'
-                }`}
-              >
-                {telemetry.esp32Status === 'demo_mode' && import.meta.env.VITE_DEMO_MODE === 'true'
-                  ? 'Demo Simulation Active'
-                  : hardwareBridge.esp32Connected 
-                  ? 'Simulate ESP32 Offline' 
-                  : 'Reconnect ESP32'}
-              </button>
+              {isDemoMode && (
+                <button
+                  onClick={() => updateHardwareBridge({ esp32Connected: !hardwareBridge.esp32Connected })}
+                  className={`w-full py-1 px-2 rounded-lg text-xs font-semibold cursor-pointer border transition-all ${
+                    telemetry.esp32Status === 'demo_mode'
+                      ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                      : hardwareBridge.esp32Connected
+                      ? 'bg-slate-800 hover:bg-rose-500/20 text-slate-300 hover:text-rose-300 border-slate-700'
+                      : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30'
+                  }`}
+                >
+                  {telemetry.esp32Status === 'demo_mode'
+                    ? 'Demo Simulation Active'
+                    : hardwareBridge.esp32Connected 
+                    ? 'Simulate ESP32 Offline' 
+                    : 'Reconnect ESP32'}
+                </button>
+              )}
             </div>
 
             {/* 2. Internet Connectivity Toggle */}
@@ -145,16 +148,18 @@ export const HardwareBridgeController: React.FC = () => {
                   ? 'Supabase REST/WebSockets uplink operational.'
                   : 'Internet down. Cloud API requests will fail immediately.'}
               </p>
-              <button
-                onClick={() => updateHardwareBridge({ internetConnected: !hardwareBridge.internetConnected })}
-                className={`w-full py-1 px-2 rounded-lg text-xs font-semibold cursor-pointer border transition-all ${
-                  hardwareBridge.internetConnected
-                    ? 'bg-slate-800 hover:bg-rose-500/20 text-slate-300 hover:text-rose-300 border-slate-700'
-                    : 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 hover:bg-cyan-500/30'
-                }`}
-              >
-                {hardwareBridge.internetConnected ? 'Disconnect Internet' : 'Restore Internet'}
-              </button>
+              {isDemoMode && (
+                <button
+                  onClick={() => updateHardwareBridge({ internetConnected: !hardwareBridge.internetConnected })}
+                  className={`w-full py-1 px-2 rounded-lg text-xs font-semibold cursor-pointer border transition-all ${
+                    hardwareBridge.internetConnected
+                      ? 'bg-slate-800 hover:bg-rose-500/20 text-slate-300 hover:text-rose-300 border-slate-700'
+                      : 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 hover:bg-cyan-500/30'
+                  }`}
+                >
+                  {hardwareBridge.internetConnected ? 'Disconnect Internet' : 'Restore Internet'}
+                </button>
+              )}
             </div>
 
             {/* 3. Force Hardware Failure Ingestion */}
@@ -178,16 +183,18 @@ export const HardwareBridgeController: React.FC = () => {
                   ? 'Optocoupler readback failure injected. Commands will fail.'
                   : 'Relays coil feedback loop responding normally.'}
               </p>
-              <button
-                onClick={() => updateHardwareBridge({ simulateFailure: !hardwareBridge.simulateFailure })}
-                className={`w-full py-1 px-2 rounded-lg text-xs font-semibold cursor-pointer border transition-all ${
-                  hardwareBridge.simulateFailure
-                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 hover:bg-amber-500/30'
-                    : 'bg-slate-800 hover:bg-amber-500/20 text-slate-300 hover:text-amber-300 border-slate-700'
-                }`}
-              >
-                {hardwareBridge.simulateFailure ? 'Clear Failure Injection' : 'Inject Command Failure'}
-              </button>
+              {isDemoMode && (
+                <button
+                  onClick={() => updateHardwareBridge({ simulateFailure: !hardwareBridge.simulateFailure })}
+                  className={`w-full py-1 px-2 rounded-lg text-xs font-semibold cursor-pointer border transition-all ${
+                    hardwareBridge.simulateFailure
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 hover:bg-amber-500/30'
+                      : 'bg-slate-800 hover:bg-amber-500/20 text-slate-300 hover:text-amber-300 border-slate-700'
+                  }`}
+                >
+                  {hardwareBridge.simulateFailure ? 'Clear Failure Injection' : 'Inject Command Failure'}
+                </button>
+              )}
             </div>
 
             {/* 4. Safety Controls: Gas Emergency & Water Cutoff */}
@@ -206,37 +213,39 @@ export const HardwareBridgeController: React.FC = () => {
                 </p>
               </div>
 
-              <div className="flex gap-2">
-                {telemetry.gasStatus === 'danger' ? (
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    className="w-1/2 text-[10px] py-1"
-                    onClick={clearSimulatedIncident}
-                  >
-                    Clear Gas Alert
-                  </Button>
-                ) : (
-                  <Button
-                    size="sm"
-                    variant="danger"
-                    className="w-1/2 text-[10px] py-1"
-                    onClick={() => triggerGasLeakAlert(510, 'Kitchen & Utility Area')}
-                  >
-                    Trigger Gas Leak
-                  </Button>
-                )}
+              {isDemoMode && (
+                <div className="flex gap-2">
+                  {telemetry.gasStatus === 'danger' ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="w-1/2 text-[10px] py-1"
+                      onClick={clearSimulatedIncident}
+                    >
+                      Clear Gas Alert
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      className="w-1/2 text-[10px] py-1"
+                      onClick={() => triggerGasLeakAlert(510, 'Kitchen & Utility Area')}
+                    >
+                      Trigger Gas Leak
+                    </Button>
+                  )}
 
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="w-1/2 text-[10px] py-1 text-blue-300 border-blue-500/30 hover:bg-blue-500/10"
-                  onClick={testAccelerateWaterMotorCutoff}
-                  leftIcon={<Droplets className="h-3 w-3 text-blue-400" />}
-                >
-                  Trip 30m Cutoff
-                </Button>
-              </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-1/2 text-[10px] py-1 text-blue-300 border-blue-500/30 hover:bg-blue-500/10"
+                    onClick={testAccelerateWaterMotorCutoff}
+                    leftIcon={<Droplets className="h-3 w-3 text-blue-400" />}
+                  >
+                    Trip 30m Cutoff
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
 

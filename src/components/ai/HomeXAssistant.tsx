@@ -134,7 +134,11 @@ export const HomeXAssistant: React.FC = () => {
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-bold text-slate-100">HomeX AI Voice Assistant</h2>
-                <Badge variant="demo" size="sm">Prototype Simulation</Badge>
+                {!import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true' ? (
+                  <Badge variant="demo" size="sm">Prototype Simulation</Badge>
+                ) : (
+                  <Badge variant="teal" size="sm">Voice AI Interface</Badge>
+                )}
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
                 Natural speech command interface for 4-channel ESP32 relays & IoT telemetry queries

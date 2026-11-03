@@ -146,14 +146,14 @@ interface SmartHomeContextType {
 
 const DEFAULT_SETTINGS: AppSettings = {
   homeName: 'SmartHomeX Smart Villa',
-  esp32IpAddress: '192.168.1.185',
+  esp32IpAddress: '',
   esp32MqttTopic: 'smarthomex/main-board',
   mqttBroker: 'mqtt://broker.emqx.io:1883',
   tempAlarmThreshold: 32,
   gasAlarmThreshold: 350,
   powerAlarmThreshold: 1200,
   voiceFeedbackEnabled: true,
-  demoSimulationActive: Boolean(import.meta.env.VITE_DEMO_MODE === 'true'),
+  demoSimulationActive: !import.meta.env.PROD && Boolean(import.meta.env.VITE_DEMO_MODE === 'true'),
   soundAlertsEnabled: true,
   pushNotificationsEnabled: true,
   timezone: 'Asia/Kolkata',
@@ -175,11 +175,13 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const parsed: Device[] = JSON.parse(saved);
         return parsed.map(d => ({
           ...d,
+          state: import.meta.env.PROD ? false : d.state,
+          isHardwareConnected: false,
           controlMode: d.controlMode || 'MANUAL',
           manualOverrideActive: d.manualOverrideActive ?? false,
           pendingCommand: false,
           maxRuntimeMinutes: d.type === 'motor' ? 30 : d.maxRuntimeMinutes,
-          activeRuntimeSeconds: d.activeRuntimeSeconds || 0,
+          activeRuntimeSeconds: import.meta.env.PROD ? 0 : (d.activeRuntimeSeconds || 0),
         }));
       } catch {
         return INITIAL_DEVICES;
@@ -189,7 +191,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   });
 
   const [hardwareBridge, setHardwareBridge] = useState<HardwareBridgeStatus>({
-    esp32Connected: !isSupabaseConfigured,
+    esp32Connected: false,
     internetConnected: typeof navigator !== 'undefined' ? navigator.onLine : true,
     simulateFailure: false,
     lastCommandSent: null,
@@ -199,37 +201,32 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setHardwareBridge(prev => ({ ...prev, ...partial }));
   }, []);
 
-  const [telemetry, setTelemetry] = useState<SensorTelemetry>(() => {
-    if (isSupabaseConfigured) {
-      return {
-        ...INITIAL_TELEMETRY,
-        temperature: null,
-        humidity: null,
-        voltage: null,
-        busVoltageV: null,
-        shuntVoltageMv: null,
-        current: null,
-        currentMa: null,
-        power: null,
-        powerMw: null,
-        energyWh: 0,
-        energyTodayKWh: 0,
-        estimatedBillToday: 0,
-        estimatedBillMonth: 0,
-        gasPpm: null,
-        gasRawAdc: null,
-        gasStatus: 'warming_up',
-        esp32Status: 'offline',
-        wifiRssi: null,
-        lastUpdated: '--',
-        isHardwareConnected: false,
-      };
-    }
-    return INITIAL_TELEMETRY;
-  });
+  const [telemetry, setTelemetry] = useState<SensorTelemetry>(() => ({
+    ...INITIAL_TELEMETRY,
+    temperature: null,
+    humidity: null,
+    voltage: null,
+    busVoltageV: null,
+    shuntVoltageMv: null,
+    current: null,
+    currentMa: null,
+    power: null,
+    powerMw: null,
+    energyWh: 0,
+    energyTodayKWh: 0,
+    estimatedBillToday: 0,
+    estimatedBillMonth: 0,
+    gasPpm: null,
+    gasRawAdc: null,
+    gasStatus: 'warming_up',
+    esp32Status: 'offline',
+    wifiRssi: null,
+    lastUpdated: '--',
+    isHardwareConnected: false,
+  }));
 
   const [alerts, setAlerts] = useState<SystemAlert[]>(() => {
-    if (isSupabaseConfigured) {
+    if (import.meta.env.PROD || isSupabaseConfigured) {
       const saved = localStorage.getItem('smarthomex_alerts');
       if (saved) {
         try {
@@ -258,7 +255,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   // INA219 Energy Intelligence State
   const [ina219Readings, setIna219Readings] = useState<INA219Reading[]>(() => {
-    if (isSupabaseConfigured) {
+    if (import.meta.env.PROD || isSupabaseConfigured) {
       return [];
     }
     return getInitialINA219Readings();
@@ -266,30 +263,39 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [tariffRate, setTariffRate] = useState<number>(7.50); // Default ₹7.50 / kWh
   const lastReadingTimeRef = useRef<number>(0);
 
-  const [voiceLogs, setVoiceLogs] = useState<VoiceLog[]>([
-    {
-      id: 'voice-init-1',
-      transcript: 'Turn on living room light',
-      response: 'Living Room Light turned ON. [Demo Mode]',
-      executedAction: 'Relay 1 (GPIO 14) -> Active',
-      matchedDeviceId: 'relay-1',
-      confidence: 0.98,
-      timestamp: '15 mins ago',
-      success: true,
-    },
-    {
-      id: 'voice-init-2',
-      transcript: 'What is the temperature in the house?',
-      response: 'The current ambient temperature is 24.8°C with 52% relative humidity according to the DHT11 sensor.',
-      confidence: 0.96,
-      timestamp: '42 mins ago',
-      success: true,
-    },
-  ]);
+  const [voiceLogs, setVoiceLogs] = useState<VoiceLog[]>(() => {
+    if (import.meta.env.PROD || isSupabaseConfigured) {
+      return [];
+    }
+    return [
+      {
+        id: 'voice-init-1',
+        transcript: 'Turn on living room light',
+        response: 'Living Room Light turned ON. [Demo Mode]',
+        executedAction: 'Relay 1 (GPIO 14) -> Active',
+        matchedDeviceId: 'relay-1',
+        confidence: 0.98,
+        timestamp: '15 mins ago',
+        success: true,
+      },
+      {
+        id: 'voice-init-2',
+        transcript: 'What is the temperature in the house?',
+        response: 'The current ambient temperature is 24.8°C with 52% relative humidity according to the DHT11 sensor.',
+        confidence: 0.96,
+        timestamp: '42 mins ago',
+        success: true,
+      },
+    ];
+  });
 
   const [settings, setSettings] = useState<AppSettings>(() => {
     const saved = localStorage.getItem('smarthomex_settings');
-    return saved ? JSON.parse(saved) : DEFAULT_SETTINGS;
+    const base = saved ? JSON.parse(saved) : DEFAULT_SETTINGS;
+    if (import.meta.env.PROD) {
+      return { ...base, demoSimulationActive: false };
+    }
+    return base;
   });
 
   // Emergency Gas Alert Modal, Siren & Life-Safety System State
@@ -298,7 +304,8 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const saved = localStorage.getItem('smarthomex_gas_safety_state');
       if (saved) {
         try {
-          return JSON.parse(saved);
+          const parsed = JSON.parse(saved);
+          return import.meta.env.PROD ? { ...parsed, isSimulated: false } : parsed;
         } catch {
           // fallback
         }
@@ -316,8 +323,8 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       lastIncidentTimestamp: null,
       lastResetTimestamp: null,
       resetAuthorizedBy: null,
-      isSimulated: true,
-      rawAdc: 420,
+      isSimulated: false,
+      rawAdc: null,
     };
   });
 
@@ -336,22 +343,22 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return 'unsupported';
   });
 
-  // BUG 3 FIX: When Supabase is configured, always start unauthenticated.
-  // Let getCurrentSession() be the authoritative source of truth — prevents
-  // stale localStorage from showing ghost-authenticated UI after token expiry.
+  // When in production or Supabase configured, always start unauthenticated.
+  // Let getCurrentSession() be the authoritative source of truth.
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    if (isSupabaseConfigured) return false;
+    if (import.meta.env.PROD || isSupabaseConfigured) return false;
     // Demo mode only: restore from localStorage
     if (typeof window !== 'undefined') {
       const savedAuth = localStorage.getItem('smarthomex_auth_session');
       if (savedAuth) return true;
     }
-    return true; // Demo mode auto-authenticates
+    return Boolean(!import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true');
   });
 
   const [user, setUser] = useState<{ id?: string; name: string; email: string; role: string } | null>(() => {
+    if (import.meta.env.PROD || isSupabaseConfigured) return null;
     // Demo mode: restore from localStorage
-    if (!isSupabaseConfigured && typeof window !== 'undefined') {
+    if (typeof window !== 'undefined') {
       const savedAuth = localStorage.getItem('smarthomex_auth_session');
       if (savedAuth) {
         try {
@@ -367,7 +374,6 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         role: 'Lead IoT Administrator',
       };
     }
-    // Supabase mode: always start as null; getCurrentSession() will populate
     return null;
   });
 
@@ -931,8 +937,8 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   // Background simulation tick: INA219 energy calculation using actual elapsed time
   useEffect(() => {
-    // Strictly disable demo simulation tick whenever real ESP32 hardware is connected or user is in authenticated Supabase mode
-    if (!settings.demoSimulationActive || hardwareBridge.esp32Connected || (isSupabaseConfigured && isAuthenticated)) return;
+    // Strictly disable demo simulation tick in production, or whenever real ESP32 hardware is connected or user is in authenticated Supabase mode
+    if (import.meta.env.PROD || !settings.demoSimulationActive || hardwareBridge.esp32Connected || (isSupabaseConfigured && isAuthenticated)) return;
 
     const interval = setInterval(() => {
       const now = Date.now();
@@ -1091,7 +1097,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }, 4000);
 
     return () => clearInterval(interval);
-  }, [settings.demoSimulationActive, hardwareBridge.esp32Connected, isSupabaseConfigured, isAuthenticated, totalActiveWatts, tariffRate]);
+  }, [settings.demoSimulationActive, hardwareBridge.esp32Connected, isAuthenticated, totalActiveWatts, tariffRate]);
 
   // Mode Switcher: MANUAL vs AUTO
   const setDeviceControlMode = useCallback((deviceId: string, mode: DeviceControlMode) => {
@@ -1469,6 +1475,10 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   // Dedicated Gas Leak Alert Trigger & Life-Safety Emergency Lockout
   const triggerGasLeakAlert = useCallback((indicativeIndex: number = 485, room: string = 'Kitchen & Utility Area', isHardware: boolean = false) => {
+    if (import.meta.env.PROD && !isHardware) {
+      console.warn('[SmartHomeX] Manual gas leak simulation is disabled in production.');
+      return;
+    }
     const gasLevel = indicativeIndex;
     const status: GasSafetyLevel = 'danger';
     const nowIso = new Date().toISOString();
@@ -1585,6 +1595,10 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // Do NOT automatically re-energize the main contactor.
   // Require independent safety verification and manual reset!
   const simulateGasClearance = useCallback(() => {
+    if (import.meta.env.PROD) {
+      console.warn('[SmartHomeX] Gas clearance simulation is disabled in production.');
+      return;
+    }
     const safeReading = 112; // Indicative relative index (clean baseline)
     const safeAdc = 410;
 
@@ -1765,6 +1779,10 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   // MQ-2 Sensor Disconnection / Cable Fault Simulation (ADC < 45)
   const simulateSensorFault = useCallback(() => {
+    if (import.meta.env.PROD) {
+      console.warn('[SmartHomeX] Sensor fault simulation is disabled in production.');
+      return;
+    }
     const faultAdc = 18;
 
     setGasSafetyState(prev => ({
@@ -1943,7 +1961,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       emergencyStatus: 'DEVICE_OFFLINE',
       category: 'device',
       title: 'ESP32 Hardware Node Offline',
-      description: 'No heartbeat response received from ESP32 controller (192.168.1.185) for over 90 seconds. Remote actuation suspended.',
+      description: 'No heartbeat response received from ESP32 controller node for over 90 seconds. Remote actuation suspended.',
       sensorReading: 'Node Health: TIMEOUT (>90s)',
       timestamp: 'Just now',
       isDemo: true,
@@ -2010,6 +2028,10 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   // Generic simulateIncident dispatcher
   const simulateIncident = useCallback((type: 'gas_leak' | 'high_temp' | 'power_surge') => {
+    if (import.meta.env.PROD) {
+      console.warn('[SmartHomeX] Incident simulation disabled in production environment.');
+      return;
+    }
     if (type === 'gas_leak') {
       triggerGasLeakAlert(485, 'Kitchen & Utility Area');
     } else if (type === 'high_temp') {
@@ -2334,7 +2356,11 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   // Settings
   const updateSettings = useCallback((newSettings: Partial<AppSettings>) => {
-    setSettings(prev => ({ ...prev, ...newSettings }));
+    setSettings(prev => ({
+      ...prev,
+      ...newSettings,
+      ...(import.meta.env.PROD ? { demoSimulationActive: false } : {}),
+    }));
   }, []);
 
   // Auth

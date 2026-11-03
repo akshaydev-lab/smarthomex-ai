@@ -32,7 +32,7 @@ export const Header: React.FC<{ onMenuToggle: () => void }> = ({ onMenuToggle })
   } = useSmartHome();
 
   const [showAlertsDropdown, setShowAlertsDropdown] = useState(false);
-  const isDemoMode = import.meta.env.VITE_DEMO_MODE === 'true';
+  const isDemoMode = !import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true';
 
   const unreadAlerts = alerts.filter(a => !a.acknowledged);
 
@@ -170,7 +170,7 @@ export const Header: React.FC<{ onMenuToggle: () => void }> = ({ onMenuToggle })
                 <div className="flex items-center justify-between pb-3 border-b border-slate-800">
                   <div className="flex items-center gap-2">
                     <span className="font-semibold text-sm text-slate-100">System Notifications</span>
-                    <Badge variant="demo" size="sm">DEMO</Badge>
+                    {isDemoMode && <Badge variant="demo" size="sm">DEMO</Badge>}
                   </div>
                   <button 
                     onClick={() => {

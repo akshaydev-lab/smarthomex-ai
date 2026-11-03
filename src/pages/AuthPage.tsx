@@ -132,7 +132,11 @@ export const AuthPage: React.FC = () => {
           setAuthError('Sign in failed. Please check your credentials and try again.');
         }
       } else {
-        // Demo mode only — no Supabase configured
+        if (import.meta.env.PROD) {
+          setAuthError('Supabase authentication is required in production. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your Vercel project settings.');
+          return;
+        }
+        // Demo mode only in local dev
         await new Promise((r) => setTimeout(r, 500));
         login(email, email.split('@')[0]);
         setCurrentPage('overview');
@@ -210,7 +214,11 @@ export const AuthPage: React.FC = () => {
           }
         }
       } else {
-        // Demo mode
+        if (import.meta.env.PROD) {
+          setAuthError('Supabase registration is required in production. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your Vercel project settings.');
+          return;
+        }
+        // Demo mode only in local dev
         await new Promise((r) => setTimeout(r, 600));
         login(email, fullName || email.split('@')[0]);
         setCurrentPage('overview');
@@ -507,7 +515,7 @@ export const AuthPage: React.FC = () => {
           <div className="mt-2 flex justify-center gap-2">
             <Badge variant="teal" size="sm">{user.role}</Badge>
             <Badge variant={isSupabaseConfigured ? 'emerald' : 'demo'} size="sm">
-              {isSupabaseConfigured ? 'Supabase Cloud Session' : 'Demo Session'}
+              {isSupabaseConfigured ? 'Supabase Cloud Session' : (!import.meta.env.PROD ? 'Demo Session' : 'Offline Session')}
             </Badge>
           </div>
 
@@ -623,8 +631,8 @@ export const AuthPage: React.FC = () => {
                 Supabase Live Authentication Active
               </Badge>
             ) : (
-              <Badge variant="demo" size="sm" icon={<ShieldAlert className="h-3 w-3 text-amber-400" />}>
-                Demo Mode (Supabase URL pending in .env.local)
+              <Badge variant={import.meta.env.PROD ? 'rose' : 'demo'} size="sm" icon={<ShieldAlert className="h-3 w-3 text-amber-400" />}>
+                {import.meta.env.PROD ? 'Supabase Configuration Missing (Set Environment Variables in Vercel)' : 'Demo Mode (Supabase URL pending in .env.local)'}
               </Badge>
             )}
           </div>
@@ -718,8 +726,8 @@ export const AuthPage: React.FC = () => {
                 Supabase Live Authentication Active
               </Badge>
             ) : (
-              <Badge variant="demo" size="sm" icon={<ShieldAlert className="h-3 w-3 text-amber-400" />}>
-                Demo Mode (Supabase URL pending in .env.local)
+              <Badge variant={import.meta.env.PROD ? 'rose' : 'demo'} size="sm" icon={<ShieldAlert className="h-3 w-3 text-amber-400" />}>
+                {import.meta.env.PROD ? 'Supabase Configuration Missing (Set Environment Variables in Vercel)' : 'Demo Mode (Supabase URL pending in .env.local)'}
               </Badge>
             )}
           </div>

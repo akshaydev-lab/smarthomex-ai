@@ -27,7 +27,7 @@ export const LivePowerStreamingGraph: React.FC = () => {
     ? Math.round(validPowerReadings.reduce((sum, r) => sum + r.powerW!, 0) / validPowerReadings.length)
     : null;
 
-  const hasDemoReadings = ina219Readings.some(r => r.isDemo);
+  const hasDemoReadings = !import.meta.env.PROD && ina219Readings.some(r => r.isDemo);
 
   return (
     <Card className="p-4 sm:p-5 border-cyan-500/20">

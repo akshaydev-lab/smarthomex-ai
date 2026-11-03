@@ -35,7 +35,7 @@ export const INA219BackendNotice: React.FC = () => {
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-base font-bold text-slate-100">Supabase Backend & Continuous Integration Architecture</h3>
               <Badge variant="teal" size="sm">Time-Series Ready</Badge>
-              {import.meta.env.VITE_DEMO_MODE === 'true' && (
+              {!import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true' && (
                 <Badge variant="demo" size="sm">DEMO PROTOCOL</Badge>
               )}
             </div>

@@ -33,6 +33,7 @@ export const AndroidSirenSimulator: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<'screen' | 'notification'>('screen');
   const [operatorName, setOperatorName] = useState('Chief Safety Engineer');
+  const isDemoMode = !import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true';
 
   const isEmergencyActive = 
     telemetry.gasStatus === 'danger' || 
@@ -225,7 +226,7 @@ export const AndroidSirenSimulator: React.FC = () => {
                     </button>
                   )}
 
-                  {!isEmergencyActive && (
+                  {!isEmergencyActive && isDemoMode && (
                     <button
                       onClick={() => triggerGasLeakAlert(485, 'Kitchen Area', false)}
                       className="w-full py-2.5 rounded-xl bg-rose-600/30 hover:bg-rose-600/50 text-rose-200 border border-rose-500/40 font-bold text-xs flex items-center justify-center gap-2 cursor-pointer"
@@ -332,13 +333,20 @@ export const AndroidSirenSimulator: React.FC = () => {
               Live Scenario Validation
             </h4>
             <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => triggerGasLeakAlert(485, 'Kitchen Area', false)}
-                className="p-2 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/40 text-[11px] font-mono text-left cursor-pointer"
-              >
-                <strong className="block text-white">1. Trigger Gas Leak</strong>
-                Relays OFF, Siren ON
-              </button>
+              {isDemoMode ? (
+                <button
+                  onClick={() => triggerGasLeakAlert(485, 'Kitchen Area', false)}
+                  className="p-2 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/40 text-[11px] font-mono text-left cursor-pointer"
+                >
+                  <strong className="block text-white">1. Trigger Gas Leak</strong>
+                  Relays OFF, Siren ON
+                </button>
+              ) : (
+                <div className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-[11px] font-mono text-left">
+                  <strong className="block text-slate-300">1. Gas Safety Monitor</strong>
+                  {isEmergencyActive ? '🚨 HAZARD DETECTED' : 'Awaiting sensor stream'}
+                </div>
+              )}
 
               <button
                 onClick={silenceMobileSiren}

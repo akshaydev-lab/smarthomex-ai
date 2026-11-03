@@ -21,7 +21,7 @@ export function parseVoiceCommand(
     return {
       understood: true,
       action: 'ALL_ON',
-      replyText: 'Activating all 4 relay channels in demo simulation mode.',
+      replyText: 'Commanding all active relay channels ON.',
       details: 'All devices commanded ON',
     };
   }
@@ -30,39 +30,67 @@ export function parseVoiceCommand(
     return {
       understood: true,
       action: 'ALL_OFF',
-      replyText: 'Switching off all 4 relay channels in demo simulation mode.',
+      replyText: 'Switching off all active relay channels.',
       details: 'All devices commanded OFF',
     };
   }
 
   // Query temperature/climate
   if (text.includes('temperature') || text.includes('how hot') || text.includes('weather') || text.includes('humidity')) {
+    if (telemetry.temperature == null) {
+      return {
+        understood: true,
+        action: 'QUERY_TEMP',
+        replyText: 'Ambient temperature readings are currently unavailable from the DHT11 sensor.',
+        details: 'DHT11 Telemetry: Disconnected',
+      };
+    }
+    const humString = telemetry.humidity != null ? ` with ${telemetry.humidity}% relative humidity` : '';
     return {
       understood: true,
       action: 'QUERY_TEMP',
-      replyText: `The current ambient temperature is ${telemetry.temperature}°C with ${telemetry.humidity}% relative humidity according to the DHT11 sensor.`,
-      details: `DHT11 Telemetry: ${telemetry.temperature}°C, ${telemetry.humidity}%`,
+      replyText: `The current ambient temperature is ${telemetry.temperature}°C${humString} according to the DHT11 sensor.`,
+      details: `DHT11 Telemetry: ${telemetry.temperature}°C, ${telemetry.humidity ?? '--'}%`,
     };
   }
 
   // Query gas/smoke
   if (text.includes('gas') || text.includes('smoke') || text.includes('air quality') || text.includes('leak')) {
+    if (telemetry.gasPpm == null && telemetry.gasRawAdc == null) {
+      return {
+        understood: true,
+        action: 'QUERY_GAS',
+        replyText: 'Combustible gas telemetry is currently offline or stabilizing.',
+        details: 'MQ-2 Telemetry: Disconnected',
+      };
+    }
+    const reading = telemetry.gasPpm != null ? `${telemetry.gasPpm} PPM` : `Raw ADC ${telemetry.gasRawAdc}`;
     const statusNote = telemetry.gasStatus === 'safe' ? 'within safe limits' : 'elevated, monitor closely';
     return {
       understood: true,
       action: 'QUERY_GAS',
-      replyText: `The MQ-2 sensor reports ${telemetry.gasPpm} PPM of combustible gas and smoke, which is ${statusNote}.`,
-      details: `MQ-2 Telemetry: ${telemetry.gasPpm} PPM (${telemetry.gasStatus.toUpperCase()})`,
+      replyText: `The MQ-2 sensor reports ${reading} of combustible gas and smoke, which is ${statusNote}.`,
+      details: `MQ-2 Telemetry: ${reading} (${telemetry.gasStatus.toUpperCase()})`,
     };
   }
 
   // Query power/voltage
   if (text.includes('power') || text.includes('watts') || text.includes('voltage') || text.includes('energy')) {
+    if (telemetry.power == null) {
+      return {
+        understood: true,
+        action: 'QUERY_POWER',
+        replyText: 'Power and electrical telemetry readings are currently unavailable from the INA219 monitor.',
+        details: 'INA219: Disconnected',
+      };
+    }
+    const vText = telemetry.voltage != null ? ` at ${telemetry.voltage} Volts` : '';
+    const cText = telemetry.current != null ? ` with ${telemetry.current} Amps` : '';
     return {
       understood: true,
       action: 'QUERY_POWER',
-      replyText: `Current real-time load is ${telemetry.power} Watts at ${telemetry.voltage} Volts with ${telemetry.current} Amps through the INA219 monitor.`,
-      details: `INA219: ${telemetry.power}W @ ${telemetry.voltage}V, ${telemetry.current}A`,
+      replyText: `Current real-time load is ${telemetry.power} Watts${vText}${cText} through the INA219 monitor.`,
+      details: `INA219: ${telemetry.power}W @ ${telemetry.voltage ?? '--'}V, ${telemetry.current ?? '--'}A`,
     };
   }
 
@@ -79,8 +107,8 @@ export function parseVoiceCommand(
         action: 'TOGGLE_DEVICE',
         targetDeviceId: light.id,
         desiredState: state,
-        replyText: `Living Room Light turned ${state ? 'ON' : 'OFF'}. [Demo Mode]`,
-        details: `Relay 1 (GPIO ${light.gpioPin}) -> ${state ? 'HIGH/Active' : 'LOW/Idle'}`,
+        replyText: `Living Room Light turned ${state ? 'ON' : 'OFF'}.`,
+        details: `Relay 1 (GPIO ${light.gpioPin}) -> ${state ? 'Active' : 'Idle'}`,
       };
     }
   }
@@ -97,8 +125,8 @@ export function parseVoiceCommand(
         action: 'TOGGLE_DEVICE',
         targetDeviceId: fan.id,
         desiredState: state,
-        replyText: `Master Ceiling Fan turned ${state ? 'ON' : 'OFF'}. [Demo Mode]`,
-        details: `Relay 2 (GPIO ${fan.gpioPin}) -> ${state ? 'HIGH/Active' : 'LOW/Idle'}`,
+        replyText: `Master Ceiling Fan turned ${state ? 'ON' : 'OFF'}.`,
+        details: `Relay 2 (GPIO ${fan.gpioPin}) -> ${state ? 'Active' : 'Idle'}`,
       };
     }
   }
@@ -115,8 +143,8 @@ export function parseVoiceCommand(
         action: 'TOGGLE_DEVICE',
         targetDeviceId: motor.id,
         desiredState: state,
-        replyText: `Water Booster Motor turned ${state ? 'ON' : 'OFF'}. [Demo Mode]`,
-        details: `Relay 3 (GPIO ${motor.gpioPin}) -> ${state ? 'HIGH/Active' : 'LOW/Idle'}`,
+        replyText: `Water Booster Motor turned ${state ? 'ON' : 'OFF'}.`,
+        details: `Relay 3 (GPIO ${motor.gpioPin}) -> ${state ? 'Active' : 'Idle'}`,
       };
     }
   }
@@ -133,8 +161,8 @@ export function parseVoiceCommand(
         action: 'TOGGLE_DEVICE',
         targetDeviceId: exhaust.id,
         desiredState: state,
-        replyText: `Kitchen Exhaust Fan turned ${state ? 'ON' : 'OFF'}. [Demo Mode]`,
-        details: `Relay 4 (GPIO ${exhaust.gpioPin}) -> ${state ? 'HIGH/Active' : 'LOW/Idle'}`,
+        replyText: `Kitchen Exhaust Fan turned ${state ? 'ON' : 'OFF'}.`,
+        details: `Relay 5 (GPIO ${exhaust.gpioPin}) -> ${state ? 'Active' : 'Idle'}`,
       };
     }
   }

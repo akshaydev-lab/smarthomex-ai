@@ -65,7 +65,7 @@ export const AlertCard: React.FC<{
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h4 className="font-bold text-sm text-slate-100">{alert.title}</h4>
-              {alert.isDemo && <Badge variant="demo" size="sm">DEMO SIMULATION</Badge>}
+              {!import.meta.env.PROD && alert.isDemo && <Badge variant="demo" size="sm">DEMO SIMULATION</Badge>}
               <Badge
                 variant={alert.severity === 'danger' ? 'rose' : alert.severity === 'warning' ? 'amber' : 'cyan'}
                 size="sm"

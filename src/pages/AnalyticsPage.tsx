@@ -58,7 +58,7 @@ export const AnalyticsPage: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
-          {import.meta.env.VITE_DEMO_MODE === 'true' && (
+          {!import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true' && (
             <Badge variant="demo" size="md">DEMO DATA</Badge>
           )}
 

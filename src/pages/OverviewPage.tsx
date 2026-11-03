@@ -70,7 +70,7 @@ export const OverviewPage: React.FC = () => {
             <Zap className="h-4 w-4 text-amber-400" />
           </div>
           <div className="text-2xl font-bold font-mono text-slate-100">
-            {formatWatts(totalActiveWatts)}
+            {telemetry.power != null ? formatWatts(telemetry.power) : (telemetry.esp32Status === 'offline' ? '--' : formatWatts(totalActiveWatts))}
           </div>
           <span className="text-[10px] text-amber-400/80 mt-1 block flex items-center gap-1">
             <TrendingUp className="h-3 w-3" /> INA219 Real-time
@@ -193,9 +193,9 @@ export const OverviewPage: React.FC = () => {
             <Badge variant={hardwareBridge.esp32Connected ? 'emerald' : 'demo'} size="sm">
               {hardwareBridge.esp32Connected
                 ? 'ESP32 Connected'
-                : (isSupabaseConfigured && isAuthenticated)
-                ? 'ESP32 Offline'
-                : 'Demo Mode'}
+                : (!import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true')
+                ? 'Demo Mode'
+                : 'ESP32 Offline'}
             </Badge>
           </div>
           <Button

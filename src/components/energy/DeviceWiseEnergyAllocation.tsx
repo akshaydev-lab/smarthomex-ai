@@ -16,12 +16,18 @@ export const DeviceWiseEnergyAllocation: React.FC = () => {
   const { devices, telemetry, tariffRate } = useSmartHome();
   const [allocationMode, setAllocationMode] = useState<'apportioned' | 'dedicated'>('apportioned');
 
+  const isDemoMode = !import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true';
+
   const deviceData = devices.map(d => {
-    // Estimated runtime today (mock proportioned)
-    const mockHours = d.id === 'relay-1' ? 6.5 : d.id === 'relay-2' ? 8.2 : d.id === 'relay-3' ? 1.2 : 0.8;
-    const estKwh = Number(((d.ratedWatts * mockHours) / 1000).toFixed(2));
+    // Estimated runtime today (real seconds or mock in dev)
+    const runtimeHours = isDemoMode
+      ? (d.id === 'relay-1' ? 6.5 : d.id === 'relay-2' ? 8.2 : d.id === 'relay-3' ? 1.2 : 0.8)
+      : (d.activeRuntimeSeconds || 0) / 3600;
+    const estKwh = Number(((d.ratedWatts * runtimeHours) / 1000).toFixed(2));
     const estCost = Number((estKwh * tariffRate).toFixed(2));
-    const percent = Math.min(100, Math.round((estKwh / (telemetry.energyTodayKWh || 1)) * 100));
+    const percent = (telemetry.energyTodayKWh && telemetry.energyTodayKWh > 0)
+      ? Math.min(100, Math.round((estKwh / telemetry.energyTodayKWh) * 100))
+      : 0;
 
     const getIcon = (type: string) => {
       switch (type) {
@@ -36,7 +42,7 @@ export const DeviceWiseEnergyAllocation: React.FC = () => {
     return {
       ...d,
       icon: getIcon(d.type),
-      mockHours,
+      runtimeHours,
       estKwh,
       estCost,
       percent,
@@ -147,13 +153,13 @@ export const DeviceWiseEnergyAllocation: React.FC = () => {
                     <span className="text-slate-200 font-bold">{d.ratedWatts} W</span>
                   </td>
                   <td className="py-3 text-slate-300">
-                    {d.mockHours} hrs
+                    {d.runtimeHours > 0 ? `${d.runtimeHours.toFixed(1)} hrs` : '--'}
                   </td>
                   <td className="py-3 text-cyan-300 font-bold">
-                    {d.estKwh} kWh
+                    {d.estKwh > 0 ? `${d.estKwh} kWh` : '--'}
                   </td>
                   <td className="py-3 text-emerald-400 font-bold">
-                    {telemetry.currencySymbol}{d.estCost}
+                    {d.estCost > 0 ? `${telemetry.currencySymbol}${d.estCost}` : '--'}
                   </td>
                   <td className="py-3">
                     <div className="flex items-center gap-2">

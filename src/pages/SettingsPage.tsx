@@ -494,18 +494,20 @@ export const SettingsPage: React.FC = () => {
               />
             </div>
 
-            <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 flex items-center justify-between">
-              <div>
-                <span className="font-semibold text-slate-200 block">Demo Telemetry Fluctuations</span>
-                <span className="text-[11px] text-slate-400">Simulate realistic micro-variations in sensor streams</span>
+            {!import.meta.env.PROD && (
+              <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 flex items-center justify-between">
+                <div>
+                  <span className="font-semibold text-slate-200 block">Demo Telemetry Fluctuations</span>
+                  <span className="text-[11px] text-slate-400">Simulate realistic micro-variations in sensor streams (Dev only)</span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={formData.demoSimulationActive}
+                  onChange={(e) => setFormData({ ...formData, demoSimulationActive: e.target.checked })}
+                  className="h-4 w-4 accent-cyan-500 rounded cursor-pointer"
+                />
               </div>
-              <input
-                type="checkbox"
-                checked={formData.demoSimulationActive}
-                onChange={(e) => setFormData({ ...formData, demoSimulationActive: e.target.checked })}
-                className="h-4 w-4 accent-cyan-500 rounded cursor-pointer"
-              />
-            </div>
+            )}
           </div>
         </Card>
 

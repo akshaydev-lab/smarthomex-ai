@@ -41,7 +41,7 @@ export const AbnormalPowerAlertsPanel: React.FC = () => {
               <Badge variant={isCurrentAnomalous || isVoltageAnomalous || isPowerAnomalous ? 'rose' : 'emerald'} size="sm">
                 {isCurrentAnomalous || isVoltageAnomalous || isPowerAnomalous ? 'ANOMALY DETECTED' : 'ALL GUARDS ACTIVE'}
               </Badge>
-              {import.meta.env.VITE_DEMO_MODE === 'true' && (
+              {!import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true' && (
                 <Badge variant="demo" size="sm">DEMO SIMULATION</Badge>
               )}
             </div>
