@@ -1,0 +1,6 @@
+# Supabase Edge Function Configuration for esp32-gateway
+# JWT verification is disabled at the API gateway level because the ESP32 hardware
+# node authenticates with a dedicated cryptographic device token (x-device-token)
+# validated internally against the SHA-256 hashed device_tokens table.
+verify_jwt = false
+

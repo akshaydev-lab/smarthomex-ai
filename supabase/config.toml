@@ -1,0 +1,3 @@
+[functions.esp32-gateway]
+verify_jwt = false
+
