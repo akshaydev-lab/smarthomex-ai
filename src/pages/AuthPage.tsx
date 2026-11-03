@@ -45,6 +45,176 @@ import { updateUserProfile } from '../services/supabaseDataService';
 
 type AuthView = 'login' | 'signup' | 'forgot_password';
 
+// ── Top-Level Password Field Component (Preserves input focus & prevents remounts) ───
+interface PasswordFieldProps {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  show: boolean;
+  onToggleShow: () => void;
+  placeholder?: string;
+  minLength?: number;
+  id: string;
+  autoComplete?: string;
+}
+
+const PasswordField: React.FC<PasswordFieldProps> = ({
+  label,
+  value,
+  onChange,
+  show,
+  onToggleShow,
+  placeholder = '••••••••',
+  minLength = 8,
+  id,
+  autoComplete = 'current-password',
+}) => (
+  <div>
+    <label htmlFor={id} className="block text-slate-300 font-medium mb-1 text-xs">
+      {label}
+    </label>
+    <div className="relative">
+      <Lock className="h-4 w-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+      <input
+        id={id}
+        type={show ? 'text' : 'password'}
+        required
+        minLength={minLength}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        autoComplete={autoComplete}
+        className="glass-input w-full pl-9 pr-10 py-2.5 rounded-xl text-slate-100 placeholder:text-slate-400 text-xs"
+      />
+      <button
+        type="button"
+        onClick={onToggleShow}
+        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-cyan-300 transition-colors"
+        aria-label={show ? 'Hide password' : 'Show password'}
+      >
+        {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+      </button>
+    </div>
+  </div>
+);
+
+// ── Top-Level Shared Error Banner ──────────────────────────────────────────
+interface ErrorBannerProps {
+  authError: string | null;
+  supabaseUrl?: string;
+  onRunDiagnostics: () => void;
+  isDiagnosing: boolean;
+  diagnosticReport: SupabaseDiagnosticReport | null;
+}
+
+const ErrorBanner: React.FC<ErrorBannerProps> = ({
+  authError,
+  supabaseUrl,
+  onRunDiagnostics,
+  isDiagnosing,
+  diagnosticReport,
+}) => {
+  if (!authError) return null;
+
+  const isFetchFailure =
+    authError.toLowerCase().includes('failed to fetch') ||
+    authError.toLowerCase().includes('networkerror') ||
+    authError.toLowerCase().includes('network error');
+
+  return (
+    <div className="mb-4 rounded-xl bg-rose-950/40 border border-rose-500/40 p-3.5 text-xs text-rose-300">
+      <div className="flex items-start gap-2">
+        <AlertCircle className="h-4 w-4 shrink-0 text-rose-400 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <span className="font-semibold block text-rose-200">
+            {isFetchFailure ? 'Network Connection Failed ("Failed to fetch")' : 'Authentication Error'}
+          </span>
+          <p className="mt-0.5 text-rose-300/90 leading-relaxed">{authError}</p>
+        </div>
+      </div>
+
+      {isFetchFailure && (
+        <div className="mt-3 pt-3 border-t border-rose-500/20 text-[11px] space-y-2">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <span className="font-mono text-slate-300 flex items-center gap-1.5">
+              <Wifi className="h-3.5 w-3.5 text-amber-400" />
+              Target: {supabaseUrl || 'https://pacejovitiwmoucyzkzy.supabase.co'}
+            </span>
+            <button
+              type="button"
+              onClick={onRunDiagnostics}
+              disabled={isDiagnosing}
+              className="px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/30 font-medium flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+            >
+              <RefreshCw className={`h-3 w-3 ${isDiagnosing ? 'animate-spin' : ''}`} />
+              {isDiagnosing ? 'Testing Probe...' : 'Probe Auth Server'}
+            </button>
+          </div>
+
+          {diagnosticReport && (
+            <div className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-700/60 font-mono text-[10.5px] space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Endpoint Health:</span>
+                <span className={diagnosticReport.reachabilityStatus === 200 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
+                  {diagnosticReport.reachabilityStatus ? `HTTP ${diagnosticReport.reachabilityStatus}` : 'BLOCKED / DROPPED'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Project Ref Match:</span>
+                <span className={diagnosticReport.isRefMatched ? 'text-emerald-400' : 'text-amber-400'}>
+                  {diagnosticReport.isRefMatched ? 'Matched (pacejovitiwmoucyzkzy)' : 'Ref Check Failed'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Error Classification:</span>
+                <span className="text-amber-300 font-semibold">{diagnosticReport.errorCategory}</span>
+              </div>
+              {diagnosticReport.reachabilityStatus === 200 ? (
+                <p className="text-emerald-300 pt-1 font-sans">
+                  ✓ Server is online and responding. The connection drop was likely transient. Try signing in again.
+                </p>
+              ) : diagnosticReport.errorCategory === 'BLOCKED_BY_EXTENSIONS' ? (
+                <p className="text-amber-200 pt-1 font-sans">
+                  ⚠ Blocked by Browser Extension (e.g. Brave Shields, uBlock Origin, or AdGuard). Toggle shields OFF for localhost:5173.
+                </p>
+              ) : (
+                <p className="text-rose-300 pt-1 font-sans">
+                  ⚠ DNS or Network Firewall blocked connection to *.supabase.co. Verify internet connectivity or VPN settings.
+                </p>
+              )}
+            </div>
+          )}
+
+          <div className="text-slate-400 leading-normal bg-slate-900/40 p-2 rounded-lg border border-slate-800">
+            <strong className="text-slate-200 block mb-1">Common causes for "Failed to fetch":</strong>
+            <ul className="list-disc pl-4 space-y-0.5 text-slate-400">
+              <li>
+                <strong className="text-slate-300">Brave Shields / Adblockers:</strong> If using Brave Browser, click the lion icon in the address bar and disable Brave Shields for localhost.
+              </li>
+              <li>
+                <strong className="text-slate-300">Browser Extensions:</strong> Extensions like uBlock Origin or Privacy Badger can block cross-origin requests to third-party endpoints.
+              </li>
+              <li>
+                <strong className="text-slate-300">Network / DNS:</strong> Ensure your network can reach{' '}
+                <code className="text-slate-300 bg-slate-800 px-1 py-0.5 rounded">https://pacejovitiwmoucyzkzy.supabase.co</code>.
+              </li>
+            </ul>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── Top-Level Shared Success Banner ────────────────────────────────────────
+const SuccessBanner: React.FC<{ message: string | null }> = ({ message }) =>
+  message ? (
+    <div className="mb-4 p-3 rounded-xl bg-emerald-950/40 border border-emerald-500/40 text-emerald-300 text-xs flex items-start gap-2">
+      <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400 mt-0.5" />
+      <span>{message}</span>
+    </div>
+  ) : null;
+
 export const AuthPage: React.FC = () => {
   const { isAuthenticated, user, login, logout, setCurrentPage } = useSmartHome();
 
@@ -289,156 +459,6 @@ export const AuthPage: React.FC = () => {
     }
   };
 
-  // ── Shared Alert Banners ───────────────────────────────────────────────────
-  const ErrorBanner = () => {
-    if (!authError) return null;
-
-    const isFetchFailure =
-      authError.toLowerCase().includes('failed to fetch') ||
-      authError.toLowerCase().includes('networkerror') ||
-      authError.toLowerCase().includes('network error');
-
-    return (
-      <div className="mb-4 rounded-xl bg-rose-950/40 border border-rose-500/40 p-3.5 text-xs text-rose-300">
-        <div className="flex items-start gap-2">
-          <AlertCircle className="h-4 w-4 shrink-0 text-rose-400 mt-0.5" />
-          <div className="flex-1 min-w-0">
-            <span className="font-semibold block text-rose-200">
-              {isFetchFailure ? 'Network Connection Failed ("Failed to fetch")' : 'Authentication Error'}
-            </span>
-            <p className="mt-0.5 text-rose-300/90 leading-relaxed">{authError}</p>
-          </div>
-        </div>
-
-        {isFetchFailure && (
-          <div className="mt-3 pt-3 border-t border-rose-500/20 text-[11px] space-y-2">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <span className="font-mono text-slate-300 flex items-center gap-1.5">
-                <Wifi className="h-3.5 w-3.5 text-amber-400" />
-                Target: {supabaseConfig.supabaseUrl || 'https://pacejovitiwmoucyzkzy.supabase.co'}
-              </span>
-              <button
-                type="button"
-                onClick={runConnectivityCheck}
-                disabled={isDiagnosing}
-                className="px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/30 font-medium flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
-              >
-                <RefreshCw className={`h-3 w-3 ${isDiagnosing ? 'animate-spin' : ''}`} />
-                {isDiagnosing ? 'Testing Probe...' : 'Probe Auth Server'}
-              </button>
-            </div>
-
-            {diagnosticReport && (
-              <div className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-700/60 font-mono text-[10.5px] space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Endpoint Health:</span>
-                  <span className={diagnosticReport.reachabilityStatus === 200 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
-                    {diagnosticReport.reachabilityStatus ? `HTTP ${diagnosticReport.reachabilityStatus}` : 'BLOCKED / DROPPED'}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Project Ref Match:</span>
-                  <span className={diagnosticReport.isRefMatched ? 'text-emerald-400' : 'text-amber-400'}>
-                    {diagnosticReport.isRefMatched ? 'Matched (pacejovitiwmoucyzkzy)' : 'Ref Check Failed'}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Error Classification:</span>
-                  <span className="text-amber-300 font-semibold">{diagnosticReport.errorCategory}</span>
-                </div>
-                {diagnosticReport.reachabilityStatus === 200 ? (
-                  <p className="text-emerald-300 pt-1 font-sans">
-                    ✓ Server is online and responding. The connection drop was likely transient. Try signing in again.
-                  </p>
-                ) : diagnosticReport.errorCategory === 'BLOCKED_BY_EXTENSIONS' ? (
-                  <p className="text-amber-200 pt-1 font-sans">
-                    ⚠ Blocked by Browser Extension (e.g. Brave Shields, uBlock Origin, or AdGuard). Toggle shields OFF for localhost:5173.
-                  </p>
-                ) : (
-                  <p className="text-rose-300 pt-1 font-sans">
-                    ⚠ DNS or Network Firewall blocked connection to *.supabase.co. Verify internet connectivity or VPN settings.
-                  </p>
-                )}
-              </div>
-            )}
-
-            <div className="text-slate-400 leading-normal bg-slate-900/40 p-2 rounded-lg border border-slate-800">
-              <strong className="text-slate-200 block mb-1">Common causes for "Failed to fetch":</strong>
-              <ul className="list-disc pl-4 space-y-0.5 text-slate-400">
-                <li>
-                  <strong className="text-slate-300">Brave Shields / Adblockers:</strong> If using Brave Browser, click the lion icon in the address bar and disable Brave Shields for localhost.
-                </li>
-                <li>
-                  <strong className="text-slate-300">Browser Extensions:</strong> Extensions like uBlock Origin or Privacy Badger can block cross-origin requests to third-party endpoints.
-                </li>
-                <li>
-                  <strong className="text-slate-300">Network / DNS:</strong> Ensure your network can reach{' '}
-                  <code className="text-slate-300 bg-slate-800 px-1 py-0.5 rounded">https://pacejovitiwmoucyzkzy.supabase.co</code>.
-                </li>
-              </ul>
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const SuccessBanner = () =>
-    authSuccess ? (
-      <div className="mb-4 p-3 rounded-xl bg-emerald-950/40 border border-emerald-500/40 text-emerald-300 text-xs flex items-start gap-2">
-        <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400 mt-0.5" />
-        <span>{authSuccess}</span>
-      </div>
-    ) : null;
-
-  // ── Password Field Component ───────────────────────────────────────────────
-  const PasswordField = ({
-    label,
-    value,
-    onChange,
-    show,
-    onToggleShow,
-    placeholder = '••••••••',
-    minLength = 8,
-    id,
-  }: {
-    label: string;
-    value: string;
-    onChange: (v: string) => void;
-    show: boolean;
-    onToggleShow: () => void;
-    placeholder?: string;
-    minLength?: number;
-    id: string;
-  }) => (
-    <div>
-      <label htmlFor={id} className="block text-slate-300 font-medium mb-1 text-xs">
-        {label}
-      </label>
-      <div className="relative">
-        <Lock className="h-4 w-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-        <input
-          id={id}
-          type={show ? 'text' : 'password'}
-          required
-          minLength={minLength}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          className="glass-input w-full pl-9 pr-10 py-2.5 rounded-xl text-slate-100 placeholder:text-slate-400 text-xs"
-        />
-        <button
-          type="button"
-          onClick={onToggleShow}
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-cyan-300 transition-colors"
-          aria-label={show ? 'Hide password' : 'Show password'}
-        >
-          {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-        </button>
-      </div>
-    </div>
-  );
-
   // ── AUTHENTICATED: Profile Card ────────────────────────────────────────────
   if (isAuthenticated && user) {
     return (
@@ -450,7 +470,7 @@ export const AuthPage: React.FC = () => {
             </div>
           </div>
 
-          <SuccessBanner />
+          <SuccessBanner message={authSuccess} />
 
           {authError && (
             <div className="mb-4 p-2.5 rounded-xl bg-rose-950/40 border border-rose-500/40 text-rose-300 text-xs flex items-center justify-center gap-2">
@@ -563,8 +583,14 @@ export const AuthPage: React.FC = () => {
             </p>
           </div>
 
-          <ErrorBanner />
-          <SuccessBanner />
+          <ErrorBanner
+            authError={authError}
+            supabaseUrl={supabaseConfig.supabaseUrl}
+            onRunDiagnostics={runConnectivityCheck}
+            isDiagnosing={isDiagnosing}
+            diagnosticReport={diagnosticReport}
+          />
+          <SuccessBanner message={authSuccess} />
 
           <form onSubmit={handleForgotPassword} className="space-y-4 text-xs">
             <div>
@@ -637,8 +663,14 @@ export const AuthPage: React.FC = () => {
             )}
           </div>
 
-          <ErrorBanner />
-          <SuccessBanner />
+          <ErrorBanner
+            authError={authError}
+            supabaseUrl={supabaseConfig.supabaseUrl}
+            onRunDiagnostics={runConnectivityCheck}
+            isDiagnosing={isDiagnosing}
+            diagnosticReport={diagnosticReport}
+          />
+          <SuccessBanner message={authSuccess} />
 
           {/* Sign In Form */}
           <form onSubmit={handleSignIn} className="space-y-4 text-xs">
@@ -669,6 +701,7 @@ export const AuthPage: React.FC = () => {
               show={showPassword}
               onToggleShow={() => setShowPassword((v) => !v)}
               minLength={6}
+              autoComplete="current-password"
             />
 
             {/* Forgot Password link */}
@@ -732,8 +765,14 @@ export const AuthPage: React.FC = () => {
             )}
           </div>
 
-          <ErrorBanner />
-          <SuccessBanner />
+          <ErrorBanner
+            authError={authError}
+            supabaseUrl={supabaseConfig.supabaseUrl}
+            onRunDiagnostics={runConnectivityCheck}
+            isDiagnosing={isDiagnosing}
+            diagnosticReport={diagnosticReport}
+          />
+          <SuccessBanner message={authSuccess} />
 
           <form onSubmit={handleSignUp} className="space-y-4 text-xs">
             {/* Full Name */}
@@ -786,6 +825,7 @@ export const AuthPage: React.FC = () => {
               onToggleShow={() => setShowPassword((v) => !v)}
               placeholder="Minimum 8 characters"
               minLength={8}
+              autoComplete="new-password"
             />
 
             {/* Confirm Password */}
@@ -798,6 +838,7 @@ export const AuthPage: React.FC = () => {
               onToggleShow={() => setShowConfirmPassword((v) => !v)}
               placeholder="Re-enter your password"
               minLength={8}
+              autoComplete="new-password"
             />
 
             {/* Password strength hint */}
@@ -806,23 +847,22 @@ export const AuthPage: React.FC = () => {
                 {[...Array(4)].map((_, i) => (
                   <div
                     key={i}
-                    className={`h-1 flex-1 rounded-full transition-colors ${
-                      password.length >= (i + 1) * 3
-                        ? password.length >= 12
-                          ? 'bg-emerald-500'
-                          : password.length >= 8
+                    className={`h-1 flex-1 rounded-full transition-colors ${password.length >= (i + 1) * 3
+                      ? password.length >= 12
+                        ? 'bg-emerald-500'
+                        : password.length >= 8
                           ? 'bg-amber-400'
                           : 'bg-rose-500'
-                        : 'bg-slate-800'
-                    }`}
+                      : 'bg-slate-800'
+                      }`}
                   />
                 ))}
                 <span className="text-[10px] text-slate-400 whitespace-nowrap">
                   {password.length < 8
                     ? 'Too short'
                     : password.length < 12
-                    ? 'Good'
-                    : 'Strong'}
+                      ? 'Good'
+                      : 'Strong'}
                 </span>
               </div>
             )}
@@ -830,9 +870,8 @@ export const AuthPage: React.FC = () => {
             {/* Confirm match indicator */}
             {confirmPassword.length > 0 && (
               <p
-                className={`text-[11px] -mt-1 flex items-center gap-1.5 ${
-                  password === confirmPassword ? 'text-emerald-400' : 'text-rose-400'
-                }`}
+                className={`text-[11px] -mt-1 flex items-center gap-1.5 ${password === confirmPassword ? 'text-emerald-400' : 'text-rose-400'
+                  }`}
               >
                 {password === confirmPassword ? (
                   <><CheckCircle2 className="h-3.5 w-3.5" /> Passwords match</>

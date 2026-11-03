@@ -120,7 +120,7 @@ export const INITIAL_TELEMETRY: SensorTelemetry = {
   ina219Status: 'disconnected',
   gasPpm: null,
   gasRawAdc: null,
-  gasStatus: 'warming_up',
+  gasStatus: 'offline',
   smokeDetected: false,
   buzzerState: false,
   esp32Status: 'offline',

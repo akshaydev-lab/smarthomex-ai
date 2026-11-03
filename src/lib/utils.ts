@@ -73,12 +73,19 @@ export function getGasStatusColor(status?: 'safe' | 'warning' | 'danger' | 'warm
         glow: 'shadow-[0_0_15px_rgba(245,158,11,0.2)]',
       };
     case 'safe':
-    default:
       return {
         bg: 'bg-emerald-500/10',
         text: 'text-emerald-400',
         border: 'border-emerald-500/30',
         glow: 'shadow-[0_0_20px_rgba(16,185,129,0.2)]',
+      };
+    case 'offline':
+    default:
+      return {
+        bg: 'bg-slate-900/40',
+        text: 'text-slate-400',
+        border: 'border-slate-800',
+        glow: 'none',
       };
   }
 }

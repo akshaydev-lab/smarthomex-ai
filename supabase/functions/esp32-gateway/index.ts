@@ -331,11 +331,14 @@ serve(async (req: Request) => {
             updated_at: new Date().toISOString(),
           }, { onConflict: 'device_id' });
 
+        // In SmartHomeX multi-relay single-MCU topology, when the ESP32 controller node
+        // is online and sending verified telemetry, ALL devices wired to that controller
+        // for this user and home are hardware connected.
         await supabase
           .from('devices')
           .update({ is_hardware_connected: true })
-          .eq('id', lightDevice.id)
-          .eq('user_id', authenticatedUserId);
+          .eq('user_id', authenticatedUserId)
+          .eq('home_id', authenticatedHomeId);
 
         // Safe audit logging to device_logs if table exists
         try {
@@ -934,6 +937,13 @@ serve(async (req: Request) => {
             last_heartbeat: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           }, { onConflict: 'device_id' });
+
+        // Maintain consistent is_hardware_connected across all controller relays
+        await supabase
+          .from('devices')
+          .update({ is_hardware_connected: true })
+          .eq('user_id', authenticatedUserId)
+          .eq('home_id', authenticatedHomeId);
 
         // Safe insert into device_logs if table exists
         try {

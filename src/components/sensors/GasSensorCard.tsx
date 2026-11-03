@@ -28,12 +28,13 @@ export const GasSensorCard: React.FC<{ telemetry: SensorTelemetry }> = ({ teleme
     simulateSensorFault
   } = useSmartHome();
 
-  const isDanger = telemetry.gasStatus === 'danger' || gasSafetyState.lockoutStatus === 'CRITICAL';
-  const isWarning = telemetry.gasStatus === 'warning';
-  const isWarmingUp = telemetry.gasStatus === 'warming_up';
-  const isClearedPendingReset = gasSafetyState.gasClearedPendingReset || gasSafetyState.lockoutStatus === 'LOCKOUT_PENDING_RESET';
-  const isSensorFault = telemetry.gasStatus === 'sensor_fault' || gasSafetyState.sensorFault || gasSafetyState.lockoutStatus === 'SENSOR_FAULT';
   const rawAdc = telemetry.gasRawAdc ?? gasSafetyState.rawAdc ?? null;
+  const isOffline = telemetry.esp32Status === 'offline' || rawAdc == null || telemetry.gasStatus === 'offline';
+  const isDanger = !isOffline && (telemetry.gasStatus === 'danger' || gasSafetyState.lockoutStatus === 'CRITICAL');
+  const isWarning = !isOffline && telemetry.gasStatus === 'warning';
+  const isWarmingUp = !isOffline && telemetry.gasStatus === 'warming_up';
+  const isClearedPendingReset = !isOffline && (gasSafetyState.gasClearedPendingReset || gasSafetyState.lockoutStatus === 'LOCKOUT_PENDING_RESET');
+  const isSensorFault = !isOffline && (telemetry.gasStatus === 'sensor_fault' || gasSafetyState.sensorFault || gasSafetyState.lockoutStatus === 'SENSOR_FAULT');
 
   return (
     <Card className={`relative overflow-hidden transition-all duration-300 ${
@@ -66,7 +67,7 @@ export const GasSensorCard: React.FC<{ telemetry: SensorTelemetry }> = ({ teleme
               <h3 className="font-bold text-slate-100 text-base">
                 MQ-2 Combustible Gas & Smoke Sensor
               </h3>
-              <Badge variant={telemetry.isHardwareConnected ? 'emerald' : 'demo'} size="sm">
+              <Badge variant={telemetry.isHardwareConnected ? 'emerald' : (!import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true') ? 'demo' : 'slate'} size="sm">
                 {telemetry.isHardwareConnected ? 'ESP32 GPIO 34' : (!import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true') ? 'Demo Emulation' : 'Offline / Standby'}
               </Badge>
               {isDanger && (
@@ -101,11 +102,25 @@ export const GasSensorCard: React.FC<{ telemetry: SensorTelemetry }> = ({ teleme
           )}
 
           <Badge
-            variant={isDanger ? 'rose' : isSensorFault ? 'amber' : isWarmingUp ? 'cyan' : isWarning || isClearedPendingReset ? 'amber' : 'emerald'}
+            variant={
+              isOffline
+                ? 'slate'
+                : isDanger
+                ? 'rose'
+                : isSensorFault
+                ? 'amber'
+                : isWarmingUp
+                ? 'cyan'
+                : isWarning || isClearedPendingReset
+                ? 'amber'
+                : 'emerald'
+            }
             size="md"
             pulse={isDanger || isWarmingUp}
           >
-            {isDanger 
+            {isOffline
+              ? 'OFFLINE / NO DATA'
+              : isDanger 
               ? 'GAS EMERGENCY LOCKOUT' 
               : isSensorFault
               ? 'SENSOR FAULT / OPEN'
@@ -139,7 +154,9 @@ export const GasSensorCard: React.FC<{ telemetry: SensorTelemetry }> = ({ teleme
                 ? 'text-amber-400' 
                 : 'text-cyan-300'
             }`}>
-              {isSensorFault 
+              {isOffline
+                ? '--'
+                : isSensorFault 
                 ? 'ERR' 
                 : isWarmingUp 
                 ? 'PREHEAT' 
@@ -150,7 +167,9 @@ export const GasSensorCard: React.FC<{ telemetry: SensorTelemetry }> = ({ teleme
                 : '--'}
             </span>
             <span className="text-xs font-bold font-mono text-slate-400">
-              {isSensorFault 
+              {isOffline
+                ? ''
+                : isSensorFault 
                 ? '(Fault ADC < 45)' 
                 : isWarmingUp 
                 ? 'STABILIZING' 
@@ -211,13 +230,15 @@ export const GasSensorCard: React.FC<{ telemetry: SensorTelemetry }> = ({ teleme
           <div className="mt-2 flex items-center justify-between">
             <div>
               <span className={`text-sm font-bold block ${
-                isDanger || isClearedPendingReset ? 'text-amber-300' : 'text-slate-200'
+                isDanger || isClearedPendingReset ? 'text-amber-300' : isOffline ? 'text-slate-400' : 'text-slate-200'
               }`}>
-                {isDanger ? 'ALL RELAYS FORCED OFF' : isClearedPendingReset ? 'LOCKED PENDING RESET' : 'CIRCUITS ARMED'}
+                {isDanger ? 'ALL RELAYS FORCED OFF' : isClearedPendingReset ? 'LOCKED PENDING RESET' : isOffline ? 'CONTROLLER OFFLINE' : 'CIRCUITS ARMED'}
               </span>
               <span className="text-[11px] text-slate-400">
                 {isDanger || isClearedPendingReset
                   ? 'Main Contactor TRIPPED. Light/Fan/Motor OFF.' 
+                  : isOffline
+                  ? 'Hardware disconnected. Relays disarmed.'
                   : 'Normal power distribution'}
               </span>
             </div>
@@ -246,12 +267,12 @@ export const GasSensorCard: React.FC<{ telemetry: SensorTelemetry }> = ({ teleme
           <div className="mt-2 flex items-center justify-between">
             <div>
               <span className={`text-sm font-bold block ${
-                isDanger ? (isSirenMuted ? 'MUTED' : 'PULSING SIREN') : 'STANDBY'
+                isDanger ? (isSirenMuted ? 'MUTED' : 'PULSING SIREN') : isOffline ? 'OFFLINE' : 'STANDBY'
               }`}>
-                {isDanger ? (isSirenMuted ? 'MUTED' : 'PULSING SIREN') : 'ARMED / SILENT'}
+                {isDanger ? (isSirenMuted ? 'MUTED' : 'PULSING SIREN') : isOffline ? 'OFFLINE' : 'ARMED / SILENT'}
               </span>
               <span className="text-[11px] text-slate-400">
-                {isDanger ? 'Dual-tone acoustic siren active' : 'Continuous acoustic monitor'}
+                {isDanger ? 'Dual-tone acoustic siren active' : isOffline ? 'ESP32 disconnected' : 'Continuous acoustic monitor'}
               </span>
             </div>
             <button

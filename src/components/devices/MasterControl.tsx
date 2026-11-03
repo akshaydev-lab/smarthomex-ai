@@ -6,10 +6,10 @@ import { Button } from '../common/Button';
 import { Badge } from '../common/Badge';
 
 export const MasterControl: React.FC = () => {
-  const { devices, setAllDevices, activeDeviceCount, totalActiveWatts } = useSmartHome();
+  const { devices, setAllDevices, activeDeviceCount, telemetry, hardwareBridge } = useSmartHome();
   const [confirmModal, setConfirmModal] = useState<boolean>(false);
 
-  const totalPossibleWatts = devices.reduce((sum, d) => sum + d.ratedWatts, 0) + 12;
+  const totalPossibleWatts = devices.reduce((sum, d) => sum + d.ratedWatts, 0);
 
   const handleAllOn = () => {
     setAllDevices(true);
@@ -33,8 +33,11 @@ export const MasterControl: React.FC = () => {
               <h2 className="text-base font-bold text-slate-100">
                 4-Channel ESP32 Relay Master Controller
               </h2>
-              <Badge variant="demo" size="sm">
-                Demo Emulation (No Physical Hardware)
+              <Badge
+                variant={hardwareBridge.esp32Connected ? 'emerald' : (!import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true') ? 'demo' : 'slate'}
+                size="sm"
+              >
+                {hardwareBridge.esp32Connected ? 'ESP32 Connected' : (!import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true') ? 'Demo Emulation' : 'ESP32 Offline'}
               </Badge>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
@@ -57,7 +60,7 @@ export const MasterControl: React.FC = () => {
               <Zap className="h-3 w-3 text-amber-400" /> Aggregate Load
             </span>
             <span className="text-sm font-bold font-mono text-slate-100">
-              {formatWatts(totalActiveWatts)} / {formatWatts(totalPossibleWatts)}
+              {telemetry.power != null ? `${formatWatts(telemetry.power)} / ${formatWatts(totalPossibleWatts)}` : `-- W / ${formatWatts(totalPossibleWatts)}`}
             </span>
           </div>
         </div>
@@ -98,14 +101,14 @@ export const MasterControl: React.FC = () => {
               Activating all 3 active user relays engages: 45W Light (GPIO 14), 75W Fan (GPIO 25), and 750W Water Booster Pump (GPIO 26) (~870W total). Channel 4 remains permanently reserved/unused, and the separate Exhaust Fan (GPIO 27) operates under Automatic Control only.
             </p>
             <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 mb-5 text-[11px] text-slate-400">
-              <strong>Simulated ESP32 Action:</strong> Sequenced staggered activation of active channels: Ch 1 (GPIO 14), Ch 2 (GPIO 25), Ch 3 (GPIO 26) with 250ms delay. Channel 4 is permanently unused.
+              <strong>Hardware Action:</strong> Sequenced activation of active channels: Ch 1 (GPIO 14), Ch 2 (GPIO 25), Ch 3 (GPIO 26). Channel 4 is permanently reserved.
             </div>
             <div className="flex justify-end gap-3">
               <Button variant="ghost" size="sm" onClick={() => setConfirmModal(false)}>
                 Cancel
               </Button>
               <Button variant="primary" size="sm" onClick={handleAllOn}>
-                Confirm All ON [Demo]
+                Confirm All ON
               </Button>
             </div>
           </div>

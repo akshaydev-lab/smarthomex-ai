@@ -1,18 +1,18 @@
 import React from 'react';
-import { 
-  LayoutDashboard, 
-  ToggleRight, 
+import {
+  LayoutDashboard,
+  ToggleRight,
   CalendarClock,
-  Activity, 
-  Zap, 
-  Mic, 
-  Workflow, 
-  ShieldAlert, 
-  Settings, 
-  UserCheck, 
-  Cpu, 
-  Wifi, 
-  ExternalLink 
+  Activity,
+  Zap,
+  Mic,
+  Workflow,
+  ShieldAlert,
+  Settings,
+  UserCheck,
+  Cpu,
+  Wifi,
+  ExternalLink
 } from 'lucide-react';
 import { useSmartHome } from '../../hooks/useSmartHome';
 import { NavigationPage } from '../../types';
@@ -35,10 +35,10 @@ export const Sidebar: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ is
   const navItems: NavItem[] = [
     { id: 'overview', label: 'Overview Dashboard', icon: LayoutDashboard },
     { id: 'devices', label: 'Device Management', icon: ToggleRight, badge: '4 Relays' },
-    { 
-      id: 'schedules', 
-      label: 'Schedules', 
-      icon: CalendarClock, 
+    {
+      id: 'schedules',
+      label: 'Schedules',
+      icon: CalendarClock,
       badge: activeSchedules > 0 ? `${activeSchedules} Active` : undefined,
       badgeVariant: 'teal'
     },
@@ -46,12 +46,12 @@ export const Sidebar: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ is
     { id: 'analytics', label: 'Energy Analytics', icon: Zap },
     { id: 'voice', label: 'AI Voice Assistant', icon: Mic, badge: 'HomeX', badgeVariant: 'teal' },
     { id: 'automations', label: 'Automation Rules', icon: Workflow },
-    { 
-      id: 'alerts', 
-      label: 'Alerts & Safety', 
-      icon: ShieldAlert, 
-      badge: unreadAlerts > 0 ? `${unreadAlerts} New` : undefined, 
-      badgeVariant: unreadAlerts > 0 ? 'rose' : undefined 
+    {
+      id: 'alerts',
+      label: 'Alerts & Safety',
+      icon: ShieldAlert,
+      badge: unreadAlerts > 0 ? `${unreadAlerts} New` : undefined,
+      badgeVariant: unreadAlerts > 0 ? 'rose' : undefined
     },
     { id: 'settings', label: 'Settings', icon: Settings },
     { id: 'auth', label: 'Account & Auth', icon: UserCheck },
@@ -66,7 +66,7 @@ export const Sidebar: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ is
     <>
       {/* Mobile backdrop */}
       {isOpen && (
-        <div 
+        <div
           onClick={onClose}
           className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-40 lg:hidden"
         />
@@ -74,13 +74,12 @@ export const Sidebar: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ is
 
       {/* Sidebar container */}
       <aside
-        className={`fixed top-0 left-0 bottom-0 z-50 w-72 bg-slate-950/95 lg:bg-slate-950/70 backdrop-blur-xl border-r border-cyan-500/15 flex flex-col transition-transform duration-300 ease-in-out ${
-          isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-        }`}
+        className={`fixed top-0 left-0 bottom-0 z-50 w-72 bg-slate-950/95 lg:bg-slate-950/70 backdrop-blur-xl border-r border-cyan-500/15 flex flex-col transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+          }`}
       >
         {/* Brand header */}
         <div className="p-5 border-b border-cyan-500/15 flex items-center justify-between">
-          <div 
+          <div
             onClick={() => handleNavClick('overview')}
             className="flex items-center gap-3 cursor-pointer group"
           >
@@ -117,24 +116,22 @@ export const Sidebar: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ is
               <button
                 key={item.id}
                 onClick={() => handleNavClick(item.id)}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all group cursor-pointer ${
-                  isActive
-                    ? 'bg-gradient-to-r from-cyan-500/20 to-teal-500/10 text-cyan-300 border border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.15)] font-semibold'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 hover:border-slate-800 border border-transparent'
-                }`}
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all group cursor-pointer ${isActive
+                  ? 'bg-gradient-to-r from-cyan-500/20 to-teal-500/10 text-cyan-300 border border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.15)] font-semibold'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 hover:border-slate-800 border border-transparent'
+                  }`}
               >
                 <div className="flex items-center gap-3">
                   <Icon
-                    className={`h-4.5 w-4.5 transition-colors ${
-                      isActive ? 'text-cyan-400' : 'text-slate-400 group-hover:text-cyan-400'
-                    }`}
+                    className={`h-4.5 w-4.5 transition-colors ${isActive ? 'text-cyan-400' : 'text-slate-400 group-hover:text-cyan-400'
+                      }`}
                   />
                   <span>{item.label}</span>
                 </div>
 
                 {item.badge && (
-                  <Badge 
-                    variant={item.badgeVariant || (isActive ? 'cyan' : 'slate')} 
+                  <Badge
+                    variant={item.badgeVariant || (isActive ? 'cyan' : 'slate')}
                     size="sm"
                   >
                     {item.badge}
@@ -154,18 +151,17 @@ export const Sidebar: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ is
                   {hardwareBridge.esp32Connected && (
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                   )}
-                  <span className={`relative inline-flex rounded-full h-2 w-2 ${
-                    hardwareBridge.esp32Connected ? 'bg-emerald-500' : 'bg-slate-500'
-                  }`}></span>
+                  <span className={`relative inline-flex rounded-full h-2 w-2 ${hardwareBridge.esp32Connected ? 'bg-emerald-500' : 'bg-slate-500'
+                    }`}></span>
                 </span>
                 <span className="text-xs font-semibold text-slate-200">ESP32 Hardware</span>
               </div>
               <Badge variant={hardwareBridge.esp32Connected ? 'emerald' : 'demo'} size="sm">
-                {hardwareBridge.esp32Connected 
-                  ? 'Connected' 
+                {hardwareBridge.esp32Connected
+                  ? 'Connected'
                   : (!import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true')
-                  ? 'Demo Mode' 
-                  : 'Offline'}
+                    ? 'Demo Mode'
+                    : 'Offline'}
               </Badge>
             </div>
 
@@ -186,11 +182,24 @@ export const Sidebar: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ is
 
               <div className="flex items-center justify-between">
                 <span className="text-slate-400">MQ-2 Gas State:</span>
-                <span className={`capitalize font-semibold ${
-                  telemetry.gasStatus === 'danger' ? 'text-rose-400' : 'text-emerald-400'
-                }`}>
-                  {telemetry.gasStatus}
-                </span>
+                {(() => {
+                  const isOffline = !hardwareBridge.esp32Connected || telemetry.gasRawAdc == null || telemetry.gasStatus === 'offline';
+                  return (
+                    <span className={`font-semibold text-[11px] ${
+                      isOffline
+                        ? 'text-slate-500'
+                        : telemetry.gasStatus === 'danger'
+                        ? 'text-rose-400'
+                        : telemetry.gasStatus === 'warning'
+                        ? 'text-amber-400'
+                        : telemetry.gasStatus === 'warming_up'
+                        ? 'text-cyan-400'
+                        : 'text-emerald-400'
+                    }`}>
+                      {isOffline ? 'OFFLINE / NO DATA' : telemetry.gasStatus.toUpperCase()}
+                    </span>
+                  );
+                })()}
               </div>
             </div>
 

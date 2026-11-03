@@ -1,5 +1,6 @@
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabaseClient';
 import type { Device, DeviceSchedule, SystemAlert, INA219Reading } from '../types';
+import { resolveDeviceInDatabase } from './deviceResolver';
 
 // ==============================================================================
 // SmartHomeX AI - Supabase Database Synchronization Service
@@ -135,7 +136,9 @@ export async function fetchDevicesFromSupabase(userId: string): Promise<Device[]
     if (!data || data.length === 0) return null;
 
     return data.map(row => ({
-      id: row.device_slug,
+      id: row.device_slug || row.id,
+      dbId: row.id,
+      deviceSlug: row.device_slug,
       name: row.name,
       type: row.type,
       relayChannel: row.relay_channel,
@@ -174,12 +177,10 @@ export async function logDeviceCommandToSupabase(params: {
   if (!client || !isSupabaseConfigured) return null;
 
   try {
-    const { data: deviceRecord } = await client
-      .from('devices')
-      .select('id')
-      .eq('user_id', params.userId)
-      .eq('device_slug', params.deviceId)
-      .maybeSingle();
+    const deviceRecord = await resolveDeviceInDatabase(client, params.userId, {
+      id: params.deviceId,
+      deviceSlug: params.deviceId,
+    });
 
     if (!deviceRecord) return null;
 
@@ -261,12 +262,10 @@ export async function saveScheduleToSupabase(userId: string, sched: DeviceSchedu
   if (!client || !isSupabaseConfigured) return null;
 
   try {
-    const { data: deviceRecord } = await client
-      .from('devices')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('device_slug', sched.deviceId)
-      .maybeSingle();
+    const deviceRecord = await resolveDeviceInDatabase(client, userId, {
+      id: sched.deviceId,
+      deviceSlug: sched.deviceId,
+    });
 
     if (!deviceRecord) return null;
 

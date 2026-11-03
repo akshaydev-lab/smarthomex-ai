@@ -24,6 +24,8 @@ export interface DeviceCommandRecord {
 
 export interface Device {
   id: string;
+  dbId?: string; // Supabase public.devices.id (UUID)
+  deviceSlug?: string; // Supabase public.devices.device_slug
   name: string;
   type: DeviceType;
   relayChannel: number; // 1 to 4
@@ -65,7 +67,7 @@ export interface HardwareBridgeStatus {
   } | null;
 }
 
-export type GasSafetyLevel = 'safe' | 'warning' | 'danger' | 'warming_up' | 'sensor_fault';
+export type GasSafetyLevel = 'safe' | 'warning' | 'danger' | 'warming_up' | 'sensor_fault' | 'offline';
 
 export type EmergencyLifecycleState = 
   | 'NORMAL' 

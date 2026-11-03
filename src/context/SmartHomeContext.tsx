@@ -218,7 +218,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     estimatedBillMonth: 0,
     gasPpm: null,
     gasRawAdc: null,
-    gasStatus: 'warming_up',
+    gasStatus: 'offline',
     esp32Status: 'offline',
     wifiRssi: null,
     lastUpdated: '--',
@@ -383,14 +383,33 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     const hydrateFromSupabase = async (userId: string) => {
       try {
-        // 1. Fetch real registered devices
-        const remoteDevices = await fetchDevicesFromSupabase(userId);
+        // Fetch registered devices and controller status in parallel
+        const [remoteDevices, status] = await Promise.all([
+          fetchDevicesFromSupabase(userId),
+          fetchLatestDeviceStatus(userId)
+        ]);
+
+        const hbTime = status?.last_heartbeat ? new Date(status.last_heartbeat).getTime() : 0;
+        const hbAgeSec = (Date.now() - hbTime) / 1000;
+        const isLive = Boolean(status?.online && hbAgeSec < 75);
+
+        setHardwareBridge(prev => ({
+          ...prev,
+          esp32Connected: isLive,
+        }));
+
         if (remoteDevices && remoteDevices.length > 0) {
           setDevices(prev => {
             return remoteDevices.map(rd => {
-              const localMatch = prev.find(p => p.id === rd.id || p.relayChannel === rd.relayChannel);
+              const localMatch = prev.find(p => 
+                p.id === rd.id || 
+                (p.dbId && p.dbId === rd.dbId) || 
+                p.relayChannel === rd.relayChannel ||
+                (rd.deviceSlug && (p.deviceSlug === rd.deviceSlug || p.id === rd.deviceSlug))
+              );
               return {
                 ...rd,
+                isHardwareConnected: isLive,
                 controlMode: rd.controlMode || localMatch?.controlMode || 'MANUAL',
                 manualOverrideActive: rd.manualOverrideActive ?? localMatch?.manualOverrideActive ?? false,
                 pendingCommand: false,
@@ -399,11 +418,22 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
               };
             });
           });
+        } else {
+          setDevices(prev =>
+            prev.map(d => ({
+              ...d,
+              isHardwareConnected: isLive,
+            }))
+          );
         }
 
-        // 2. Fetch latest real telemetry from Supabase
+        // 3. Fetch latest sensor telemetry from Supabase
         const remoteTelemetry = await fetchLatestSensorTelemetry(userId);
         if (remoteTelemetry) {
+          const recTime = remoteTelemetry.recorded_at ? new Date(remoteTelemetry.recorded_at).getTime() : 0;
+          const telemetryAgeSec = (Date.now() - recTime) / 1000;
+          const isFreshTelemetry = isLive && telemetryAgeSec < 75;
+
           const rawAdcHydrated = remoteTelemetry.gas_raw_adc != null
             ? Number(remoteTelemetry.gas_raw_adc)
             : remoteTelemetry.raw_adc != null
@@ -414,26 +444,30 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
           setTelemetry(prev => ({
             ...prev,
-            temperature: remoteTelemetry.temperature_c != null ? Number(remoteTelemetry.temperature_c) : null,
-            humidity: remoteTelemetry.humidity_pct != null ? Number(remoteTelemetry.humidity_pct) : null,
-            voltage: remoteTelemetry.bus_voltage_v != null ? Number(remoteTelemetry.bus_voltage_v) : null,
-            busVoltageV: remoteTelemetry.bus_voltage_v != null ? Number(remoteTelemetry.bus_voltage_v) : null,
-            shuntVoltageMv: remoteTelemetry.shunt_voltage_mv != null ? Number(remoteTelemetry.shunt_voltage_mv) : null,
-            current: remoteTelemetry.current_a != null ? Number(remoteTelemetry.current_a) : null,
-            currentMa: remoteTelemetry.current_ma != null ? Number(remoteTelemetry.current_ma) : null,
-            power: remoteTelemetry.power_w != null ? Number(remoteTelemetry.power_w) : null,
-            powerMw: remoteTelemetry.power_w != null ? Number(remoteTelemetry.power_w) * 1000 : null,
+            esp32Status: isLive ? 'connected' : 'offline',
+            wifiRssi: isLive ? (status?.wifi_rssi ?? null) : null,
+            temperature: isFreshTelemetry && remoteTelemetry.temperature_c != null ? Number(remoteTelemetry.temperature_c) : null,
+            humidity: isFreshTelemetry && remoteTelemetry.humidity_pct != null ? Number(remoteTelemetry.humidity_pct) : null,
+            voltage: isFreshTelemetry && remoteTelemetry.bus_voltage_v != null ? Number(remoteTelemetry.bus_voltage_v) : null,
+            busVoltageV: isFreshTelemetry && remoteTelemetry.bus_voltage_v != null ? Number(remoteTelemetry.bus_voltage_v) : null,
+            shuntVoltageMv: isFreshTelemetry && remoteTelemetry.shunt_voltage_mv != null ? Number(remoteTelemetry.shunt_voltage_mv) : null,
+            current: isFreshTelemetry && remoteTelemetry.current_a != null ? Number(remoteTelemetry.current_a) : null,
+            currentMa: isFreshTelemetry && remoteTelemetry.current_ma != null ? Number(remoteTelemetry.current_ma) : null,
+            power: isFreshTelemetry && remoteTelemetry.power_w != null ? Number(remoteTelemetry.power_w) : null,
+            powerMw: isFreshTelemetry && remoteTelemetry.power_w != null ? Number(remoteTelemetry.power_w) * 1000 : null,
             energyWh: remoteTelemetry.energy_wh != null ? Number(remoteTelemetry.energy_wh) : prev.energyWh,
             energyTodayKWh: remoteTelemetry.energy_wh != null ? Number((Number(remoteTelemetry.energy_wh) / 1000).toFixed(3)) : prev.energyTodayKWh,
-            gasPpm: remoteTelemetry.gas_ppm != null ? Number(remoteTelemetry.gas_ppm) : null,
-            gasRawAdc: rawAdcHydrated,
-            gasStatus: (remoteTelemetry.gas_status as GasSafetyLevel) || prev.gasStatus,
+            gasPpm: isFreshTelemetry && remoteTelemetry.gas_ppm != null ? Number(remoteTelemetry.gas_ppm) : null,
+            gasRawAdc: isFreshTelemetry ? rawAdcHydrated : null,
+            gasStatus: isFreshTelemetry ? ((remoteTelemetry.gas_status as GasSafetyLevel) || 'safe') : 'offline',
             lastTelemetryAt: remoteTelemetry.recorded_at,
-            lastUpdated: new Date(remoteTelemetry.recorded_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-            isHardwareConnected: !remoteTelemetry.is_demo,
+            lastUpdated: remoteTelemetry.recorded_at
+              ? new Date(remoteTelemetry.recorded_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+              : '--',
+            isHardwareConnected: isLive && !remoteTelemetry.is_demo,
           }));
 
-          if (remoteTelemetry.gas_status === 'danger') {
+          if (isFreshTelemetry && remoteTelemetry.gas_status === 'danger') {
             setIsGasEmergencyModalOpen(true);
             setGasSafetyState(prev => ({
               ...prev,
@@ -442,7 +476,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
               buzzerActive: true,
               rawAdc: rawAdcHydrated ?? prev.rawAdc,
             }));
-          } else if (remoteTelemetry.gas_status === 'sensor_fault') {
+          } else if (isFreshTelemetry && remoteTelemetry.gas_status === 'sensor_fault') {
             setGasSafetyState(prev => ({
               ...prev,
               lockoutStatus: prev.lockoutStatus === 'CRITICAL' || prev.lockoutStatus === 'EMERGENCY_LOCKOUT' ? prev.lockoutStatus : 'SENSOR_FAULT',
@@ -454,6 +488,8 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           // No sensor readings in DB yet: preserve clean empty state with nulls
           setTelemetry(prev => ({
             ...prev,
+            esp32Status: isLive ? 'connected' : 'offline',
+            wifiRssi: isLive ? (status?.wifi_rssi ?? null) : null,
             temperature: null,
             humidity: null,
             voltage: null,
@@ -465,56 +501,11 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             powerMw: null,
             gasPpm: null,
             gasRawAdc: null,
-            gasStatus: 'warming_up',
+            gasStatus: 'offline',
             lastTelemetryAt: null,
             lastUpdated: 'No readings available',
             isHardwareConnected: false,
           }));
-        }
-
-        // 3. Fetch latest controller device_status & heartbeat
-        const status = await fetchLatestDeviceStatus(userId);
-        if (status) {
-          const hbTime = status.last_heartbeat ? new Date(status.last_heartbeat).getTime() : 0;
-          const ageSec = (Date.now() - hbTime) / 1000;
-          const isLive = Boolean(status.online && ageSec < 75);
-
-          setHardwareBridge(prev => ({
-            ...prev,
-            esp32Connected: isLive,
-          }));
-
-          setTelemetry(prev => ({
-            ...prev,
-            esp32Status: isLive ? 'connected' : 'offline',
-            wifiRssi: isLive ? (status.wifi_rssi ?? null) : null,
-          }));
-
-          setDevices(prev =>
-            prev.map(d => ({
-              ...d,
-              isHardwareConnected: isLive,
-            }))
-          );
-        } else {
-          // No device status row: ESP32 has never registered or is currently offline
-          setHardwareBridge(prev => ({
-            ...prev,
-            esp32Connected: false,
-          }));
-
-          setTelemetry(prev => ({
-            ...prev,
-            esp32Status: 'offline',
-            wifiRssi: null,
-          }));
-
-          setDevices(prev =>
-            prev.map(d => ({
-              ...d,
-              isHardwareConnected: false,
-            }))
-          );
         }
 
         // 4. Fetch real alerts for the authenticated user (removing demo fallback)
@@ -609,11 +600,11 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const newState = p.new.state ?? false;
         setDevices(prev =>
           prev.map(d =>
-            (d.id === updatedSlug || d.id === updatedId)
+            (d.id === updatedSlug || d.id === updatedId || (updatedId && d.dbId === updatedId) || (updatedSlug && d.deviceSlug === updatedSlug))
               ? {
                   ...d,
                   state: newState,
-                  isHardwareConnected: p.new?.is_hardware_connected ?? true,
+                  isHardwareConnected: p.new?.is_hardware_connected ?? d.isHardwareConnected,
                   powerWatts: newState ? d.ratedWatts : 0,
                   lastToggled: 'Just now',
                   pendingCommand: false,
@@ -930,10 +921,11 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [devices]);
 
   const totalActiveWatts = useMemo(() => {
-    const baselineStandbyWatts = 12; // Base power for ESP32 and sensors
+    // Only in non-production explicit demo mode do we add a mock standby floor; in production, never fabricate a baseline
+    const baselineStandbyWatts = (!import.meta.env.PROD && settings.demoSimulationActive) ? 12 : 0;
     const devicesWatts = devices.reduce((sum, d) => (d.state ? sum + d.ratedWatts : sum), 0);
     return baselineStandbyWatts + devicesWatts;
-  }, [devices]);
+  }, [devices, settings.demoSimulationActive]);
 
   // Background simulation tick: INA219 energy calculation using actual elapsed time
   useEffect(() => {
@@ -1043,7 +1035,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           powerW: activeP,
           energyWh: wh,
           energyKWh: Number((wh / 1000).toFixed(3)),
-          isDemo: true,
+          isDemo: !import.meta.env.PROD && Boolean(import.meta.env.VITE_DEMO_MODE === 'true'),
           anomaly: currentDrawA > 5.0 ? 'overcurrent' : activeP > 1000 ? 'overpower' : 'normal',
         };
 
@@ -1086,7 +1078,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             title: 'Water Motor Auto-Cutoff Triggered',
             description: `${motorName} continuous run-time reached the 30-minute safety limit. Automatically tripped OFF to prevent pump dry-run and stator burnout.`,
             timestamp: 'Just now',
-            isDemo: true,
+            isDemo: !import.meta.env.PROD && Boolean(import.meta.env.VITE_DEMO_MODE === 'true'),
             acknowledged: false,
             source: 'Pump Protection System (Relay Ch 3, GPIO 26)',
           };
@@ -1138,7 +1130,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       title: 'Automated Mode Resumed',
       description: `Manual override cleared for ${target?.name || 'Device'}. Relay is now synchronized with scheduled automation rules.`,
       timestamp: 'Just now',
-      isDemo: true,
+      isDemo: !import.meta.env.PROD && Boolean(import.meta.env.VITE_DEMO_MODE === 'true'),
       acknowledged: false,
       source: 'Automation Manager',
     };
@@ -1170,17 +1162,24 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       title: 'Safety Cutoff Executed (30m Protection)',
       description: 'Water Booster Motor exceeded maximum 30-minute continuous run-time limit. Automatic power disconnect executed to prevent pump dry-run damage and coil overheating.',
       timestamp: 'Just now',
-      isDemo: true,
+      isDemo: !import.meta.env.PROD && Boolean(import.meta.env.VITE_DEMO_MODE === 'true'),
       acknowledged: false,
       source: 'Pump Protection Circuit (30m Auto-Cutoff)',
     };
     setAlerts(prev => [alert, ...prev]);
   }, []);
 
-  // Directly set device state (used by scheduler and automations)
-  const setDeviceState = useCallback((id: string, state: boolean, source: 'manual' | 'schedule' | 'master' = 'manual') => {
-    const target = devices.find(d => d.id === id);
+  // Directly set device state (used by scheduler and automations) with Hardware ACK verification
+  const setDeviceState = useCallback(async (id: string, state: boolean, source: 'manual' | 'schedule' | 'master' = 'manual') => {
+    const target = devices.find(d => 
+      d.id === id || 
+      (d.dbId && d.dbId === id) || 
+      (d.deviceSlug && d.deviceSlug === id) ||
+      (d.relayChannel && (id === `relay-${d.relayChannel}` || id === d.type))
+    );
     if (!target) return;
+
+    if (target.type === 'unused' || target.relayChannel === 4) return;
 
     // Safety Inhibit Check: Enforce lockout during gas danger or pending reset
     const isLockoutActive = 
@@ -1200,7 +1199,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         title: 'Safety Interlock: Action Inhibited',
         description: reasonMsg,
         timestamp: 'Just now',
-        isDemo: true,
+        isDemo: !import.meta.env.PROD && Boolean(import.meta.env.VITE_DEMO_MODE === 'true'),
         acknowledged: false,
         source: 'Hardware Safety Interlock',
       };
@@ -1208,29 +1207,80 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return;
     }
 
-    setDevices(prev => 
-      prev.map(device => {
-        if (device.id === id) {
-          return {
-            ...device,
-            state,
-            powerWatts: state ? device.ratedWatts : 0,
-            lastToggled: 'Just now',
-            pendingCommand: false,
-            lastCommandStatus: 'success',
-            lastCommandError: undefined,
-            manualOverrideActive: source === 'schedule' ? false : (device.controlMode === 'AUTO' ? true : device.manualOverrideActive),
-            activeRuntimeSeconds: state ? (device.activeRuntimeSeconds || 0) : 0,
-          };
-        }
-        return device;
-      })
+    setDevices(prev =>
+      prev.map(d => (d.id === target.id || (target.dbId && d.dbId === target.dbId) ? { ...d, pendingCommand: true, lastCommandStatus: 'pending' } : d))
     );
-  }, [devices, telemetry.gasStatus, gasSafetyState.lockoutStatus]);
+
+    const result = await dispatchAuthenticatedDeviceCommand(
+      target,
+      state,
+      hardwareBridge,
+      telemetry.gasStatus,
+      source,
+      user?.id,
+      gasSafetyState.lockoutStatus
+    );
+
+    const cmdTimestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const cmdRecord: DeviceCommandRecord = {
+      id: `cmd-rec-${Date.now()}`,
+      commandId: `cmd_${Date.now()}_${target.id}`,
+      deviceId: target.id,
+      action: state ? 'ON' : 'OFF',
+      timestamp: cmdTimestamp,
+      status: result.success ? 'acknowledged' : result.statusCode === 403 ? 'rejected_gas_safety' : result.statusCode === 504 ? 'timeout' : 'failed',
+      errorMessage: result.errorMessage,
+      roundTripMs: result.roundTripMs,
+      confirmedByHardware: result.confirmedByHardware,
+      source,
+    };
+
+    if (result.success) {
+      setDevices(prev => 
+        prev.map(device => {
+          if (device.id === target.id || (target.dbId && device.dbId === target.dbId)) {
+            return {
+              ...device,
+              state: result.actualDeviceState,
+              powerWatts: result.actualDeviceState ? device.ratedWatts : 0,
+              lastToggled: 'Just now',
+              pendingCommand: false,
+              lastCommandStatus: 'success',
+              lastCommandError: undefined,
+              manualOverrideActive: source === 'schedule' ? false : (device.controlMode === 'AUTO' ? true : device.manualOverrideActive),
+              activeRuntimeSeconds: result.actualDeviceState ? (device.activeRuntimeSeconds || 0) : 0,
+              commandHistory: [cmdRecord, ...(device.commandHistory || [])].slice(0, 10),
+            };
+          }
+          return device;
+        })
+      );
+    } else {
+      setDevices(prev =>
+        prev.map(device => {
+          if (device.id === target.id || (target.dbId && device.dbId === target.dbId)) {
+            return {
+              ...device,
+              pendingCommand: false,
+              lastCommandStatus: result.statusCode === 403 ? 'gas_inhibited' : result.statusCode === 504 ? 'timeout' : 'failed',
+              lastCommandError: result.errorMessage,
+              commandHistory: [cmdRecord, ...(device.commandHistory || [])].slice(0, 10),
+            };
+          }
+          return device;
+        })
+      );
+    }
+  }, [devices, hardwareBridge, telemetry.gasStatus, user?.id, gasSafetyState.lockoutStatus]);
 
   // Primary Device Toggle Switch with Authenticated Supabase-to-ESP32 Hardware Pipeline
   const toggleDevice = useCallback(async (id: string) => {
-    const target = devices.find(d => d.id === id);
+    const target = devices.find(d => 
+      d.id === id || 
+      (d.dbId && d.dbId === id) || 
+      (d.deviceSlug && d.deviceSlug === id) ||
+      (d.relayChannel && (id === `relay-${d.relayChannel}` || id === d.type))
+    );
     if (!target) return;
 
     // Requirement: Relay 4 on the 4-channel module must remain unused!
@@ -1243,7 +1293,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         title: 'Action Blocked: Channel 4 is Reserved / Unused',
         description: 'Relay channel 4 on the 4-channel module is permanently designated as unused per hardware safety specification.',
         timestamp: 'Just now',
-        isDemo: true,
+        isDemo: !import.meta.env.PROD && Boolean(import.meta.env.VITE_DEMO_MODE === 'true'),
         acknowledged: false,
         source: 'Hardware Controller',
       };
@@ -1257,7 +1307,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     // Set pending state so the button displays spinner immediately
     setDevices(prev =>
-      prev.map(d => (d.id === id ? { ...d, pendingCommand: true, lastCommandStatus: 'pending' } : d))
+      prev.map(d => (d.id === target.id || (target.dbId && d.dbId === target.dbId) ? { ...d, pendingCommand: true, lastCommandStatus: 'pending' } : d))
     );
 
     // Dispatch authenticated command through Supabase to ESP32
@@ -1309,7 +1359,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     if (result.success) {
       setDevices(prev =>
         prev.map(device => {
-          if (device.id === id) {
+          if (device.id === target.id || (target.dbId && device.dbId === target.dbId)) {
             const isManualOverride = device.controlMode === 'AUTO';
             const history = [cmdRecord, ...(device.commandHistory || [])].slice(0, 10);
             return {
@@ -1332,7 +1382,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       // Hardware failure or safety lockout: relay state remains unchanged!
       setDevices(prev =>
         prev.map(device => {
-          if (device.id === id) {
+          if (device.id === target.id || (target.dbId && device.dbId === target.dbId)) {
             const history = [cmdRecord, ...(device.commandHistory || [])].slice(0, 10);
             return {
               ...device,
@@ -1359,7 +1409,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         title: result.statusCode === 403 ? 'Safety Inhibit: Relay Action Blocked' : 'Device Command Failed',
         description: result.errorMessage || 'Hardware command could not be delivered to ESP32 node.',
         timestamp: 'Just now',
-        isDemo: true,
+        isDemo: !import.meta.env.PROD && Boolean(import.meta.env.VITE_DEMO_MODE === 'true'),
         acknowledged: false,
         source: 'Hardware Bridge / Supabase Gateway',
       };
@@ -1367,7 +1417,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   }, [devices, hardwareBridge, telemetry.gasStatus, user?.id, gasSafetyState.lockoutStatus]);
 
-  // Master Control: All Devices ON / All Devices OFF
+  // Master Control: All Devices ON / All Devices OFF with Hardware ACK verification
   const setAllDevices = useCallback(async (state: boolean) => {
     const isLockoutActive = 
       telemetry.gasStatus === 'danger' || 
@@ -1382,7 +1432,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         title: 'Safety Interlock: Master ON Blocked',
         description: 'Master relay energization is completely prohibited while system is in EMERGENCY LOCKOUT or awaiting manual safety reset.',
         timestamp: 'Just now',
-        isDemo: true,
+        isDemo: !import.meta.env.PROD && Boolean(import.meta.env.VITE_DEMO_MODE === 'true'),
         acknowledged: false,
         source: 'Hardware Safety Interlock',
       };
@@ -1400,7 +1450,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           ? 'Cannot send master command: Internet disconnected.'
           : 'Cannot send master command: ESP32 node is offline.',
         timestamp: 'Just now',
-        isDemo: true,
+        isDemo: !import.meta.env.PROD && Boolean(import.meta.env.VITE_DEMO_MODE === 'true'),
         acknowledged: false,
         source: 'Hardware Bridge',
       };
@@ -1408,37 +1458,74 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return;
     }
 
+    // Filter controllable user devices (exclude permanently reserved Channel 4 and auto exhaust fan)
+    const targets = devices.filter(d => d.type !== 'unused' && d.relayChannel !== 4 && d.type !== 'exhaust_fan');
+
+    // Mark targets as pending
     setDevices(prev =>
-      prev.map(device => {
-        // Channel 4 of 4-channel relay is permanently reserved/unused: ALWAYS keep OFF
-        if (device.type === 'unused' || device.relayChannel === 4) {
-          return {
-            ...device,
-            state: false,
-            powerWatts: 0,
-            pendingCommand: false,
-          };
-        }
-        // Exhaust Fan is Automatic Control Only: retain current auto status, do not force ON via master manual
-        if (device.type === 'exhaust_fan') {
-          return state 
-            ? device 
-            : { ...device, state: false, powerWatts: 0, lastToggled: 'Just now' };
-        }
-        return {
-          ...device,
-          state,
-          powerWatts: state ? device.ratedWatts : 0,
-          lastToggled: 'Just now',
-          pendingCommand: false,
-          lastCommandStatus: 'success',
-          lastCommandError: undefined,
-          manualOverrideActive: false,
-          activeRuntimeSeconds: 0,
-        };
-      })
+      prev.map(d => targets.some(t => t.id === d.id) ? { ...d, pendingCommand: true, lastCommandStatus: 'pending' } : d)
     );
-  }, [telemetry.gasStatus, hardwareBridge, gasSafetyState.lockoutStatus]);
+
+    // Dispatch authenticated commands through the hardware pipeline for each target
+    for (const target of targets) {
+      const result = await dispatchAuthenticatedDeviceCommand(
+        target,
+        state,
+        hardwareBridge,
+        telemetry.gasStatus,
+        'master',
+        user?.id,
+        gasSafetyState.lockoutStatus
+      );
+
+      const cmdTimestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const cmdRecord: DeviceCommandRecord = {
+        id: `cmd-rec-${Date.now()}-${target.id}`,
+        commandId: `cmd_${Date.now()}_${target.id}`,
+        deviceId: target.id,
+        action: state ? 'ON' : 'OFF',
+        timestamp: cmdTimestamp,
+        status: result.success
+          ? 'acknowledged'
+          : result.statusCode === 403
+          ? 'rejected_gas_safety'
+          : result.statusCode === 504
+          ? 'timeout'
+          : 'failed',
+        errorMessage: result.errorMessage,
+        roundTripMs: result.roundTripMs,
+        confirmedByHardware: result.confirmedByHardware,
+        source: 'master',
+      };
+
+      setDevices(prev =>
+        prev.map(d => {
+          if (d.id !== target.id && (!target.dbId || d.dbId !== target.dbId)) return d;
+          if (result.success) {
+            return {
+              ...d,
+              state: result.actualDeviceState,
+              powerWatts: result.actualDeviceState ? d.ratedWatts : 0,
+              lastToggled: 'Just now',
+              pendingCommand: false,
+              lastCommandStatus: 'success',
+              lastCommandError: undefined,
+              manualOverrideActive: false,
+              commandHistory: [cmdRecord, ...(d.commandHistory || [])].slice(0, 10),
+            };
+          } else {
+            return {
+              ...d,
+              pendingCommand: false,
+              lastCommandStatus: result.statusCode === 403 ? 'gas_inhibited' : result.statusCode === 504 ? 'timeout' : 'failed',
+              lastCommandError: result.errorMessage,
+              commandHistory: [cmdRecord, ...(d.commandHistory || [])].slice(0, 10),
+            };
+          }
+        })
+      );
+    }
+  }, [devices, hardwareBridge, telemetry.gasStatus, user?.id, gasSafetyState.lockoutStatus]);
 
   // Request browser push notification permission
   const requestPushPermission = useCallback(async () => {
@@ -1629,7 +1716,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       title: 'Gas Normalized Below Threshold — Safety Lockout Maintained',
       description: 'MQ-2 readings have returned to clean baseline. Automatic relay or contactor restoration is strictly prohibited. Qualified personnel must physically inspect the premises for gas pockets and authorize a manual safety reset before any circuit can be re-energized.',
       timestamp: 'Just now',
-      isDemo: true,
+      isDemo: !import.meta.env.PROD && Boolean(import.meta.env.VITE_DEMO_MODE === 'true'),
       acknowledged: false,
       source: 'Gas Emergency Life-Safety Monitor',
       actionTaken: 'Status: LOCKOUT_PENDING_RESET. Contactor remains TRIPPED. Manual reset required.',
@@ -1658,7 +1745,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         title: 'Safety Reset REJECTED: Active Gas Hazard',
         description: `Manual safety reset was denied. MQ-2 sensor still detects dangerous gas levels (${telemetry.gasPpm} indicative index). Clear gas condition must be verified before reset can proceed.`,
         timestamp: 'Just now',
-        isDemo: true,
+        isDemo: !import.meta.env.PROD && Boolean(import.meta.env.VITE_DEMO_MODE === 'true'),
         acknowledged: false,
         source: 'Safety Verification Engine',
       };
@@ -1770,7 +1857,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         ? 'Exhaust fan configuration confirmed as ATEX/IECEx certified explosion-proof. Automatic activation during gas emergencies is now permitted.'
         : 'Exhaust fan uncertified safety setting active. Automatic exhaust activation during combustible gas hazards is strictly disabled to prevent brush/relay spark ignition.',
       timestamp: 'Just now',
-      isDemo: true,
+      isDemo: !import.meta.env.PROD && Boolean(import.meta.env.VITE_DEMO_MODE === 'true'),
       acknowledged: false,
       source: 'Ventilation Safety Manager',
     };
@@ -1799,7 +1886,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       title: '⚠️ MQ-2 Sensor Fault Detected (ADC < 45)',
       description: `MQ-2 analog channel reported raw ADC ${faultAdc} (below hardware noise threshold 45). Possible disconnected jumper, open sensor circuit, or power fault on GPIO 34. System placed in fail-safe alert.`,
       timestamp: 'Just now',
-      isDemo: true,
+      isDemo: !import.meta.env.PROD && Boolean(import.meta.env.VITE_DEMO_MODE === 'true'),
       acknowledged: false,
       source: 'MQ-2 Hardware Diagnostic Watchdog',
       actionTaken: 'Status: SENSOR_FAULT. Check hardware wiring on GPIO 34.',
@@ -1842,7 +1929,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       title: '🔇 Audible Siren Silenced (Emergency Remains ACTIVE)',
       description: 'Audible mobile siren silenced by user. CRITICAL gas emergency remains fully ACTIVE in the background. Main contactor remains TRIPPED and all electrical relays remain locked OUT. Safety reset is still required.',
       timestamp: 'Just now',
-      isDemo: true,
+      isDemo: !import.meta.env.PROD && Boolean(import.meta.env.VITE_DEMO_MODE === 'true'),
       acknowledged: false,
       source: 'Mobile Emergency Controller',
       actionTaken: 'Audible siren stopped. Vibration stopped. Safety lockout maintained.',
@@ -1863,7 +1950,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       description: `Ambient temperature reached ${temp}°C exceeding configured comfort threshold (32.0°C). Ceiling Fan Relay engaged for thermal relief.`,
       sensorReading: `${temp}°C (DHT11 GPIO 32)`,
       timestamp: 'Just now',
-      isDemo: true,
+      isDemo: !import.meta.env.PROD && Boolean(import.meta.env.VITE_DEMO_MODE === 'true'),
       acknowledged: false,
       source: 'DHT11 Sensor (GPIO 32)',
       actionTaken: 'Fan Relay 2 activated for thermal dissipation.',
@@ -1889,7 +1976,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         description: 'MQ-2 analog signal dropped below hardware noise threshold (< 45 ADC). Sensor wire disconnected or power lost on GPIO 34. Fail-safe lockout engaged.',
         sensorReading: 'ADC: 12 (Noise Floor: 45)',
         timestamp: 'Just now',
-        isDemo: true,
+        isDemo: !import.meta.env.PROD && Boolean(import.meta.env.VITE_DEMO_MODE === 'true'),
         acknowledged: false,
         source: 'MQ-2 Diagnostic Watchdog (GPIO 34)',
         actionTaken: 'System placed in SENSOR_FAULT fail-safe. Check wiring.',
@@ -1906,7 +1993,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         description: 'DHT11 Single-Bus data pin on GPIO 32 failed handshake (response timeout). Environmental streaming paused.',
         sensorReading: 'GPIO 32: High-Z / No Response',
         timestamp: 'Just now',
-        isDemo: true,
+        isDemo: !import.meta.env.PROD && Boolean(import.meta.env.VITE_DEMO_MODE === 'true'),
         acknowledged: false,
         source: 'DHT11 Sensor Watchdog (GPIO 32)',
         actionTaken: 'Flagged sensor fault in diagnostic registry.',
@@ -1925,7 +2012,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       description: 'DHT11 CRC checksum failure detected. Signal corrupted by RF interference or loose jumper wire on GPIO 32.',
       sensorReading: 'Checksum: MISMATCH (NaN)',
       timestamp: 'Just now',
-      isDemo: true,
+      isDemo: !import.meta.env.PROD && Boolean(import.meta.env.VITE_DEMO_MODE === 'true'),
       acknowledged: false,
       source: 'Sensor Diagnostic Watchdog',
     };
@@ -1944,7 +2031,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       description: 'ESP32 node disconnected from Wi-Fi access point. Local life-safety gas lockout remains fully autonomous and operational on-chip.',
       sensorReading: 'Wi-Fi Status: DISCONNECTED',
       timestamp: 'Just now',
-      isDemo: true,
+      isDemo: !import.meta.env.PROD && Boolean(import.meta.env.VITE_DEMO_MODE === 'true'),
       acknowledged: false,
       source: 'ESP32 Network Watchdog',
       actionTaken: 'Background Wi-Fi retry loop engaged. Local safety intact.',
@@ -1964,7 +2051,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       description: 'No heartbeat response received from ESP32 controller node for over 90 seconds. Remote actuation suspended.',
       sensorReading: 'Node Health: TIMEOUT (>90s)',
       timestamp: 'Just now',
-      isDemo: true,
+      isDemo: !import.meta.env.PROD && Boolean(import.meta.env.VITE_DEMO_MODE === 'true'),
       acknowledged: false,
       source: 'Gateway Heartbeat Monitor',
       actionTaken: 'Marked device_status offline. Relay states preserved.',
@@ -1982,7 +2069,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       description: 'ESP32 controller recovered from unexpected reboot (Reset Reason: SW_CPU_RESET / Brownout). Flash NVS deduplication successfully restored.',
       sensorReading: 'Boot Reason: Watchdog / Brownout',
       timestamp: 'Just now',
-      isDemo: true,
+      isDemo: !import.meta.env.PROD && Boolean(import.meta.env.VITE_DEMO_MODE === 'true'),
       acknowledged: false,
       source: 'ESP32 Boot Monitor',
       actionTaken: 'Relays initialized to fail-safe OFF. NVS deduplication active.',
@@ -2001,7 +2088,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       description: `Hardware verification failed for ${target?.name || deviceId}: Commanded state does not match physical optocoupler coil feedback signal.`,
       sensorReading: 'Coil Feedback: OPEN vs Commanded: CLOSED',
       timestamp: 'Just now',
-      isDemo: true,
+      isDemo: !import.meta.env.PROD && Boolean(import.meta.env.VITE_DEMO_MODE === 'true'),
       acknowledged: false,
       source: 'Optocoupler Hardware Feedback Circuit',
       actionTaken: 'Tripped safety warning. Relay marked unconfirmed.',
@@ -2018,7 +2105,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       title: `Fault Recovered: ${faultType}`,
       description: `The hardware condition for "${faultType}" has normalized and normal telemetry polling has resumed. Note: Life-safety gas lockout is NOT cleared automatically.`,
       timestamp: 'Just now',
-      isDemo: true,
+      isDemo: !import.meta.env.PROD && Boolean(import.meta.env.VITE_DEMO_MODE === 'true'),
       acknowledged: false,
       source: 'System Recovery Watchdog',
       actionTaken: 'Recovery logged. System operating nominally.',
@@ -2049,7 +2136,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         title: 'High Ambient Temperature Alert',
         description: 'DHT11 recorded 34.2°C exceeding comfort threshold (32°C). Ceiling Fan Relay engaged.',
         timestamp: 'Just now',
-        isDemo: true,
+        isDemo: !import.meta.env.PROD && Boolean(import.meta.env.VITE_DEMO_MODE === 'true'),
         acknowledged: false,
         source: 'DHT11 Sensor (GPIO 32)',
         actionTaken: 'Fan Relay 2 activated',
@@ -2070,7 +2157,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         title: 'High Load Anomaly Detected',
         description: 'INA219 logged aggregate load spike above threshold. Monitored for thermal limits.',
         timestamp: 'Just now',
-        isDemo: true,
+        isDemo: !import.meta.env.PROD && Boolean(import.meta.env.VITE_DEMO_MODE === 'true'),
         acknowledged: false,
         source: 'INA219 Power Monitor (I2C 0x40)',
       };
@@ -2138,7 +2225,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         powerW: simPower,
         energyWh: lastWh,
         energyKWh: Number((lastWh / 1000).toFixed(3)),
-        isDemo: true,
+        isDemo: !import.meta.env.PROD && Boolean(import.meta.env.VITE_DEMO_MODE === 'true'),
         anomaly: type,
       };
       const next = [...prev, newPoint];
@@ -2152,7 +2239,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       title,
       description: desc,
       timestamp: 'Just now',
-      isDemo: true,
+      isDemo: !import.meta.env.PROD && Boolean(import.meta.env.VITE_DEMO_MODE === 'true'),
       acknowledged: false,
       source: 'INA219 Power Monitor (I2C 0x40)',
       actionTaken: 'Flagged in energy harmonics log. Relay protection monitoring active.',
@@ -2273,7 +2360,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             title: `Schedule Executed: ${sched.name}`,
             description: `${targetDevice?.name || 'Device'} was automatically turned ${sched.action} at ${formatTimeIST(timeStr)} (IST).`,
             timestamp: 'Just now',
-            isDemo: true,
+            isDemo: !import.meta.env.PROD && Boolean(import.meta.env.VITE_DEMO_MODE === 'true'),
             acknowledged: false,
             source: 'Device Scheduler Engine (IST)',
           };
@@ -2317,7 +2404,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
               title: `Schedule Executed: ${sched.name}`,
               description: `${targetDevice?.name || 'Device'} automatically turned ${sched.action} at ${formatTimeIST(currentIST.timeStr)} (IST).`,
               timestamp: 'Just now',
-              isDemo: true,
+              isDemo: !import.meta.env.PROD && Boolean(import.meta.env.VITE_DEMO_MODE === 'true'),
               acknowledged: false,
               source: 'Device Scheduler Engine (IST)',
             };

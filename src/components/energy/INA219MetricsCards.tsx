@@ -131,15 +131,15 @@ export const INA219MetricsCards: React.FC = () => {
         </div>
 
         <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono">
-          <span className="text-slate-400">Standby Floor:</span>
-          <span className="text-slate-300 font-semibold">12 W (ESP32)</span>
+          <span className="text-slate-400">Telemetry Stream:</span>
+          <span className="text-slate-300 font-semibold">{telemetry.power != null ? `${telemetry.power} W (Active)` : '-- W (Offline)'}</span>
         </div>
 
         <div className="mt-1 flex items-center justify-between text-[10px] text-slate-500 font-mono">
           <span>Thermal Load: Normal</span>
-          <span className="text-teal-400 flex items-center gap-0.5">
-            <span className="inline-block h-1.5 w-1.5 rounded-full bg-teal-400 animate-ping" />
-            Live Actuating
+          <span className={telemetry.power != null ? 'text-teal-400 flex items-center gap-0.5' : 'text-slate-500 flex items-center gap-0.5'}>
+            {telemetry.power != null && <span className="inline-block h-1.5 w-1.5 rounded-full bg-teal-400 animate-ping" />}
+            {telemetry.power != null ? 'Live Stream' : 'Awaiting Telemetry'}
           </span>
         </div>
       </Card>

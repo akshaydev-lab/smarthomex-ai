@@ -204,9 +204,17 @@ export const HardwareBridgeController: React.FC = () => {
                   <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
                     <ShieldAlert className="h-4 w-4 text-rose-400" /> Safety Actions
                   </span>
-                  <Badge variant={telemetry.gasStatus === 'danger' ? 'rose' : 'emerald'} size="sm">
-                    {telemetry.gasStatus === 'danger' ? 'GAS ALERT' : 'SECURE'}
-                  </Badge>
+                  {(() => {
+                    const isOffline = !hardwareBridge.esp32Connected || telemetry.gasRawAdc == null || telemetry.gasStatus === 'offline';
+                    return (
+                      <Badge
+                        variant={isOffline ? 'slate' : telemetry.gasStatus === 'danger' ? 'rose' : telemetry.gasStatus === 'warning' ? 'amber' : 'emerald'}
+                        size="sm"
+                      >
+                        {isOffline ? 'OFFLINE / NO DATA' : telemetry.gasStatus === 'danger' ? 'GAS ALERT' : 'SECURE'}
+                      </Badge>
+                    );
+                  })()}
                 </div>
                 <p className="text-[11px] text-slate-400 mb-2">
                   Test gas safety lockout (highest priority) or motor 30m cutoff.

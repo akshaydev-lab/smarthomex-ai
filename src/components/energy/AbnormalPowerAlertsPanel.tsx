@@ -116,65 +116,67 @@ export const AbnormalPowerAlertsPanel: React.FC = () => {
           <p className="text-[11px] text-slate-400 font-mono">
             {isPowerAnomalous
               ? `Active power at ${telemetry.power}W exceeds 1000W thermal dissipation!`
-              : `Current active draw: ${telemetry.power}W. Standby floor: 12W.`}
+              : `Current active draw: ${telemetry.power != null ? `${telemetry.power}W.` : '-- W.'}`}
           </p>
         </div>
       </div>
 
-      {/* Interactive Anomaly Test Runner */}
-      <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800/80 mb-4">
-        <div className="flex items-center justify-between mb-2.5 flex-wrap gap-2">
-          <span className="text-xs font-semibold text-slate-300 font-mono uppercase tracking-wider flex items-center gap-1.5">
-            <Radio className="h-3.5 w-3.5 text-cyan-400" />
-            Interactive Hardware Anomaly Simulator (Demo Testing)
-          </span>
-          <span className="text-[11px] text-slate-400 font-mono">
-            Dispatches simulated INA219 sensor faults
-          </span>
+      {/* Interactive Anomaly Test Runner (Development & Demo only) */}
+      {!import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true' && (
+        <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800/80 mb-4">
+          <div className="flex items-center justify-between mb-2.5 flex-wrap gap-2">
+            <span className="text-xs font-semibold text-slate-300 font-mono uppercase tracking-wider flex items-center gap-1.5">
+              <Radio className="h-3.5 w-3.5 text-cyan-400" />
+              Interactive Hardware Anomaly Simulator (Demo Testing)
+            </span>
+            <span className="text-[11px] text-slate-400 font-mono">
+              Dispatches simulated INA219 sensor faults
+            </span>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="glass"
+              size="sm"
+              onClick={() => handleTest('overcurrent')}
+              isLoading={activeTest === 'overcurrent'}
+              className="text-xs border-amber-500/30 hover:bg-amber-500/10 text-amber-300"
+            >
+              ⚡ Test Overcurrent (5.85A)
+            </Button>
+
+            <Button
+              variant="glass"
+              size="sm"
+              onClick={() => handleTest('overpower')}
+              isLoading={activeTest === 'overpower'}
+              className="text-xs border-rose-500/30 hover:bg-rose-500/10 text-rose-300"
+            >
+              🔥 Test Overpower (1380W)
+            </Button>
+
+            <Button
+              variant="glass"
+              size="sm"
+              onClick={() => handleTest('voltage_sag')}
+              isLoading={activeTest === 'voltage_sag'}
+              className="text-xs border-blue-500/30 hover:bg-blue-500/10 text-blue-300"
+            >
+              📉 Test Voltage Sag (198V)
+            </Button>
+
+            <Button
+              variant="glass"
+              size="sm"
+              onClick={() => handleTest('voltage_surge')}
+              isLoading={activeTest === 'voltage_surge'}
+              className="text-xs border-purple-500/30 hover:bg-purple-500/10 text-purple-300"
+            >
+              📈 Test Voltage Surge (254V)
+            </Button>
+          </div>
         </div>
-
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="glass"
-            size="sm"
-            onClick={() => handleTest('overcurrent')}
-            isLoading={activeTest === 'overcurrent'}
-            className="text-xs border-amber-500/30 hover:bg-amber-500/10 text-amber-300"
-          >
-            ⚡ Test Overcurrent (5.85A)
-          </Button>
-
-          <Button
-            variant="glass"
-            size="sm"
-            onClick={() => handleTest('overpower')}
-            isLoading={activeTest === 'overpower'}
-            className="text-xs border-rose-500/30 hover:bg-rose-500/10 text-rose-300"
-          >
-            🔥 Test Overpower (1380W)
-          </Button>
-
-          <Button
-            variant="glass"
-            size="sm"
-            onClick={() => handleTest('voltage_sag')}
-            isLoading={activeTest === 'voltage_sag'}
-            className="text-xs border-blue-500/30 hover:bg-blue-500/10 text-blue-300"
-          >
-            📉 Test Voltage Sag (198V)
-          </Button>
-
-          <Button
-            variant="glass"
-            size="sm"
-            onClick={() => handleTest('voltage_surge')}
-            isLoading={activeTest === 'voltage_surge'}
-            className="text-xs border-purple-500/30 hover:bg-purple-500/10 text-purple-300"
-          >
-            📈 Test Voltage Surge (254V)
-          </Button>
-        </div>
-      </div>
+      )}
 
       {/* Recent Anomaly Log */}
       {powerAlerts.length > 0 && (

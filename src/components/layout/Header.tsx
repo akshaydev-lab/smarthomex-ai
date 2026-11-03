@@ -94,7 +94,7 @@ export const Header: React.FC<{ onMenuToggle: () => void }> = ({ onMenuToggle })
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950/60 border border-slate-800/60 text-xs font-mono">
               <span className="h-2 w-2 rounded-full bg-cyan-400 animate-pulse"></span>
               <span className="text-slate-400">Load:</span>
-              <span className="text-cyan-300 font-semibold">{formatWatts(totalActiveWatts)}</span>
+              <span className="text-cyan-300 font-semibold">{telemetry.power != null ? formatWatts(telemetry.power) : '-- W'}</span>
             </div>
 
             {/* Ambient Temp */}

@@ -26,7 +26,6 @@ import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { getHourlyTelemetryData } from '../services/sensorService';
 import { formatWatts, formatVoltage, formatTemperature, formatHumidity } from '../lib/utils';
-import { isSupabaseConfigured } from '../lib/supabaseClient';
 
 export const OverviewPage: React.FC = () => {
   const { 
@@ -34,7 +33,6 @@ export const OverviewPage: React.FC = () => {
     toggleDevice, 
     telemetry, 
     activeDeviceCount, 
-    totalActiveWatts, 
     alerts, 
     acknowledgeAlert, 
     dismissAlert,
@@ -70,7 +68,7 @@ export const OverviewPage: React.FC = () => {
             <Zap className="h-4 w-4 text-amber-400" />
           </div>
           <div className="text-2xl font-bold font-mono text-slate-100">
-            {telemetry.power != null ? formatWatts(telemetry.power) : (telemetry.esp32Status === 'offline' ? '--' : formatWatts(totalActiveWatts))}
+            {telemetry.power != null ? formatWatts(telemetry.power) : '-- W'}
           </div>
           <span className="text-[10px] text-amber-400/80 mt-1 block flex items-center gap-1">
             <TrendingUp className="h-3 w-3" /> INA219 Real-time
@@ -114,17 +112,22 @@ export const OverviewPage: React.FC = () => {
         </Card>
 
         {/* Metric 6: MQ-2 Gas */}
-        <Card className={`p-3.5 ${
-          telemetry.gasStatus === 'danger'
-            ? 'border-rose-500/50 bg-rose-950/20 shadow-glow-danger'
-            : telemetry.gasStatus === 'warning'
-            ? 'border-amber-500/50 bg-amber-950/20'
-            : telemetry.gasStatus === 'sensor_fault'
-            ? 'border-rose-500/40 bg-rose-950/20'
-            : telemetry.gasStatus === 'warming_up'
-            ? 'border-cyan-500/40 bg-cyan-950/20'
-            : ''
-        }`}>
+        {(() => {
+          const isOffline = telemetry.esp32Status === 'offline' || telemetry.gasRawAdc == null || telemetry.gasStatus === 'offline';
+          return (
+            <Card className={`p-3.5 ${
+              isOffline
+                ? ''
+                : telemetry.gasStatus === 'danger'
+                ? 'border-rose-500/50 bg-rose-950/20 shadow-glow-danger'
+                : telemetry.gasStatus === 'warning'
+                ? 'border-amber-500/50 bg-amber-950/20'
+                : telemetry.gasStatus === 'sensor_fault'
+                ? 'border-rose-500/40 bg-rose-950/20'
+                : telemetry.gasStatus === 'warming_up'
+                ? 'border-cyan-500/40 bg-cyan-950/20'
+                : ''
+            }`}>
           <div className="flex items-center justify-between text-slate-400 mb-2">
             <span className="text-xs font-semibold">MQ-2 Gas</span>
             <Flame className={`h-4 w-4 ${
@@ -151,7 +154,9 @@ export const OverviewPage: React.FC = () => {
                 ? 'text-cyan-300'
                 : 'text-emerald-400'
             }`}>
-              {telemetry.gasStatus === 'sensor_fault'
+              {isOffline
+                ? '--'
+                : telemetry.gasStatus === 'sensor_fault'
                 ? 'FAULT'
                 : telemetry.gasStatus === 'warming_up'
                 ? 'PREHEAT'
@@ -162,7 +167,7 @@ export const OverviewPage: React.FC = () => {
                 : '--'}
             </span>
             <span className="text-xs font-mono text-slate-400">
-              {telemetry.gasStatus === 'sensor_fault' || telemetry.gasStatus === 'warming_up' ? '' : telemetry.gasPpm != null ? 'PPM' : 'ADC'}
+              {isOffline || telemetry.gasStatus === 'sensor_fault' || telemetry.gasStatus === 'warming_up' ? '' : telemetry.gasPpm != null ? 'PPM' : 'ADC'}
             </span>
           </div>
           <span className={`text-[10px] font-mono mt-1 block uppercase font-semibold ${
@@ -176,9 +181,11 @@ export const OverviewPage: React.FC = () => {
               ? 'text-cyan-300'
               : 'text-emerald-400'
           }`}>
-            {telemetry.gasStatus}
+            {isOffline ? 'OFFLINE / NO DATA' : telemetry.gasStatus}
           </span>
         </Card>
+      );
+    })()}
       </div>
 
       {/* Master 4-Channel Relay Control Bar */}

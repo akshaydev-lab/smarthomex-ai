@@ -1,5 +1,6 @@
 import type { Device, HardwareBridgeStatus, GasSafetyLevel, EmergencyLockoutStatus } from '../types';
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabaseClient';
+import { resolveDeviceInDatabase, isUuid } from './deviceResolver';
 
 export interface AuthenticatedDeviceCommandPayload {
   commandId: string;
@@ -93,9 +94,9 @@ export async function dispatchAuthenticatedDeviceCommand(
   // Inhibit any attempt to turn ON ordinary electrical relays during a gas hazard
   // or while the system is locked out awaiting safety reset.
   // -------------------------------------------------------------------------
-  const isLockoutActive = 
-    gasStatus === 'danger' || 
-    lockoutStatus === 'EMERGENCY_LOCKOUT' || 
+  const isLockoutActive =
+    gasStatus === 'danger' ||
+    lockoutStatus === 'EMERGENCY_LOCKOUT' ||
     lockoutStatus === 'LOCKOUT_PENDING_RESET';
 
   if (isLockoutActive && targetState === true) {
@@ -158,15 +159,9 @@ export async function dispatchAuthenticatedDeviceCommand(
 
     const startTime = Date.now();
     try {
-      // 1. Resolve actual device UUID in database
-      const { data: devRow } = await client
-        .from('devices')
-        .select('id, home_id')
-        .eq('user_id', userId)
-        .or(`device_slug.eq.${device.id},id.eq.${device.id}`)
-        .maybeSingle();
-
-      const deviceUuid = devRow?.id || (device.id.length === 36 ? device.id : null);
+      // 1. Resolve actual device in database safely without non-UUID casting errors
+      const devRow = await resolveDeviceInDatabase(client, userId, device);
+      const deviceUuid = devRow?.id || (isUuid(device.id) ? device.id : null);
       if (!deviceUuid) {
         return {
           success: false,

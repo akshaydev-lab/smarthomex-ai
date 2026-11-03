@@ -1,13 +1,13 @@
 import React from 'react';
-import { 
-  Thermometer, 
-  Droplet, 
-  Zap, 
-  Flame, 
-  Cpu, 
-  RotateCcw, 
-  Sliders, 
-  Activity 
+import {
+  Thermometer,
+  Droplet,
+  Zap,
+  Flame,
+  Cpu,
+  RotateCcw,
+  Sliders,
+  Activity
 } from 'lucide-react';
 import { useSmartHome } from '../hooks/useSmartHome';
 import { SensorGauge } from '../components/sensors/SensorGauge';
@@ -15,16 +15,13 @@ import { GasSensorCard } from '../components/sensors/GasSensorCard';
 import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
-import { isSupabaseConfigured } from '../lib/supabaseClient';
 
 export const SensorsPage: React.FC = () => {
-  const { 
-    telemetry, 
-    simulateIncident, 
+  const {
+    telemetry,
+    simulateIncident,
     clearSimulatedIncident,
-    totalActiveWatts,
     triggerGasLeakAlert,
-    isAuthenticated,
   } = useSmartHome();
 
   const isDemoMode = !import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true';
@@ -42,11 +39,11 @@ export const SensorsPage: React.FC = () => {
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-bold text-slate-100">Live Hardware Telemetry Stream</h3>
                 <Badge variant={telemetry.isHardwareConnected ? 'emerald' : 'demo'} size="sm">
-                  {telemetry.isHardwareConnected 
-                    ? 'Hardware Live' 
+                  {telemetry.isHardwareConnected
+                    ? 'Hardware Live'
                     : (!import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true')
-                    ? 'Demo Mode' 
-                    : 'Hardware Offline'}
+                      ? 'Demo Mode'
+                      : 'Hardware Offline'}
                 </Badge>
               </div>
               <p className="text-xs text-slate-400">
@@ -161,16 +158,16 @@ export const SensorsPage: React.FC = () => {
         {/* Sensor 5: Active Real-time Power */}
         <SensorGauge
           title="Aggregate Active Power"
-          value={telemetry.power != null ? telemetry.power : (telemetry.esp32Status === 'offline' ? null : totalActiveWatts)}
+          value={telemetry.power}
           unit="W"
           sensorModel="INA219 Integrated Math"
           pinInfo="P = V × I"
           icon={<Zap className="h-5 w-5" />}
           min={0}
           max={1200}
-          currentValue={telemetry.power != null ? telemetry.power : (telemetry.esp32Status === 'offline' ? 0 : totalActiveWatts)}
+          currentValue={telemetry.power ?? 0}
           accentColor="emerald"
-          statusText={telemetry.power == null && telemetry.esp32Status === 'offline' ? 'DISCONNECTED' : 'NORMAL POWER'}
+          statusText={telemetry.power == null ? 'DISCONNECTED / NO DATA' : 'NORMAL POWER'}
           subtitle="Real-time calculated wattage of all 4 circuits."
           isRealHardware={telemetry.isHardwareConnected}
         />
