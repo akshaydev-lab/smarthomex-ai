@@ -82,6 +82,15 @@ export type EmergencyLifecycleState =
 
 export type EmergencyLockoutStatus = EmergencyLifecycleState;
 
+export type LockoutResetUiStatus = 
+  | 'LOCKOUT ACTIVE'
+  | 'RESET REQUESTED'
+  | 'WAITING FOR ESP32'
+  | 'RECOVERY VALIDATION'
+  | 'RESET REJECTED — GAS UNSAFE'
+  | 'RESET REJECTED — SENSOR FAULT'
+  | 'LOCKOUT CLEARED';
+
 export interface GasSafetySystemState {
   lockoutStatus: EmergencyLifecycleState;
   mainContactorTripped: boolean;

@@ -46,12 +46,14 @@ import {
   insertAlertToSupabase,
   acknowledgeAlertInSupabase,
   resolveGasAlertsInSupabase,
+  requestSafeEmergencyLockoutReset,
   fetchDevicesFromSupabase,
   fetchLatestSensorTelemetry,
   fetchLatestDeviceStatus,
   fetchAlertsFromSupabase,
   fetchRecentSensorTelemetry
 } from '../services/supabaseDataService';
+import { LockoutResetUiStatus } from '../types';
 
 interface SmartHomeContextType {
   // Navigation
@@ -94,6 +96,9 @@ interface SmartHomeContextType {
   triggerGasLeakAlert: (indicativeIndex?: number, room?: string, isHardware?: boolean) => void;
   simulateGasClearance: () => void;
   authorizeSafetyReset: (authorizedBy?: string) => Promise<void>;
+  resetLockoutUiStatus: LockoutResetUiStatus;
+  resetLockoutDetail: string | null;
+  setResetLockoutUiStatus: (status: LockoutResetUiStatus) => void;
   setExhaustSafetyCertified: (certified: boolean) => void;
   simulateSensorFault: () => void;
 
@@ -353,10 +358,17 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     if (typeof window !== 'undefined') {
       localStorage.setItem('smarthomex_gas_safety_state', JSON.stringify(gasSafetyState));
     }
+    if (gasSafetyState.lockoutStatus === 'NORMAL' && !gasSafetyState.gasClearedPendingReset) {
+      setResetLockoutUiStatus('LOCKOUT CLEARED');
+    } else {
+      setResetLockoutUiStatus(prev => (prev === 'LOCKOUT CLEARED' ? 'LOCKOUT ACTIVE' : prev));
+    }
   }, [gasSafetyState]);
 
   const [isGasEmergencyModalOpen, setIsGasEmergencyModalOpen] = useState<boolean>(false);
   const [isSirenMuted, setIsSirenMuted] = useState<boolean>(false);
+  const [resetLockoutUiStatus, setResetLockoutUiStatus] = useState<LockoutResetUiStatus>('LOCKOUT ACTIVE');
+  const [resetLockoutDetail, setResetLockoutDetail] = useState<string | null>(null);
   const [pushNotificationStatus, setPushNotificationStatus] = useState<'default' | 'granted' | 'denied' | 'unsupported'>(() => {
     if (typeof window !== 'undefined' && 'Notification' in window) {
       return Notification.permission as 'default' | 'granted' | 'denied';
@@ -1826,6 +1838,9 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const authorizeSafetyReset = useCallback(async (authorizedBy: string = 'Authorized Safety Operator') => {
     // 1. Safety verification check
     if (telemetry.gasStatus === 'danger' || (gasSafetyState.rawAdc && gasSafetyState.rawAdc >= 900)) {
+      setResetLockoutUiStatus('RESET REJECTED — GAS UNSAFE');
+      setResetLockoutDetail('Combustible gas reading is at or above clearance threshold (900 ADC). Atmosphere is not safe.');
+
       const rejectAlert: SystemAlert = {
         id: `reset-rejected-${Date.now()}`,
         type: 'gas_leak',
@@ -1842,30 +1857,67 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return;
     }
 
+    if (gasSafetyState.sensorFault || (gasSafetyState.rawAdc != null && gasSafetyState.rawAdc < 45)) {
+      setResetLockoutUiStatus('RESET REJECTED — SENSOR FAULT');
+      setResetLockoutDetail('MQ-2 sensor indicates open circuit or disconnected wire (< 45 ADC).');
+
+      const rejectAlert: SystemAlert = {
+        id: `reset-rejected-${Date.now()}`,
+        type: 'gas_leak',
+        severity: 'danger',
+        emergencyStatus: 'CRITICAL',
+        title: 'Safety Reset REJECTED: Sensor Fault',
+        description: 'Manual safety reset was denied. MQ-2 analog sensor indicates open circuit or disconnected wire (< 45 ADC). Inspect wiring on GPIO 34.',
+        timestamp: 'Just now',
+        isDemo: false,
+        acknowledged: false,
+        source: 'Safety Verification Engine',
+      };
+      setAlerts(prev => [rejectAlert, ...prev]);
+      return;
+    }
+
     // 2. Submit server-side reset validation to Gateway (if real hardware mode)
     if (user?.id && !gasSafetyState.isSimulated) {
-      const resetResult = await resolveGasAlertsInSupabase(user.id, authorizedBy).catch(err => ({
+      setResetLockoutUiStatus('RESET REQUESTED');
+      setResetLockoutDetail('Submitting reset request to gateway...');
+
+      const resetResult = await requestSafeEmergencyLockoutReset(
+        user.id,
+        authorizedBy,
+        (status, detail) => {
+          setResetLockoutUiStatus(status);
+          setResetLockoutDetail(detail || null);
+        }
+      ).catch(err => ({
         success: false,
-        error: err?.message || 'Gateway connection error',
+        status: 'LOCKOUT ACTIVE' as LockoutResetUiStatus,
+        errorMessage: err?.message || 'Gateway connection error',
       }));
 
       if (!resetResult.success) {
+        setResetLockoutUiStatus(resetResult.status || 'LOCKOUT ACTIVE');
+        setResetLockoutDetail(resetResult.errorMessage || 'Reset rejected');
+
         const rejectAlert: SystemAlert = {
           id: `reset-rejected-${Date.now()}`,
           type: 'gas_leak',
           severity: 'danger',
           emergencyStatus: 'CRITICAL',
-          title: 'Safety Reset REJECTED by Gateway',
-          description: resetResult.error || 'Gateway rejected safety reset. Atmosphere condition not safe or ESP32 node offline.',
+          title: 'Safety Reset REJECTED by Gateway / ESP32',
+          description: resetResult.errorMessage || 'Gateway/ESP32 rejected safety reset. Atmosphere condition not safe or ESP32 node offline.',
           timestamp: 'Just now',
           isDemo: false,
           acknowledged: false,
-          source: 'Gateway Safety Verification',
+          source: 'ESP32 Hardware Verification',
         };
         setAlerts(prev => [rejectAlert, ...prev]);
         return;
       }
     }
+
+    setResetLockoutUiStatus('LOCKOUT CLEARED');
+    setResetLockoutDetail('ESP32 hardware verified clean air. Lockout disarmed. Contactor restored. Relays remain safely OFF.');
 
     const nowIso = new Date().toISOString();
 
@@ -2646,6 +2698,9 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     triggerGasLeakAlert,
     simulateGasClearance,
     authorizeSafetyReset,
+    resetLockoutUiStatus,
+    resetLockoutDetail,
+    setResetLockoutUiStatus,
     setExhaustSafetyCertified,
     simulateSensorFault,
     triggerHighTempAlert,
@@ -2708,6 +2763,9 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     triggerGasLeakAlert,
     simulateGasClearance,
     authorizeSafetyReset,
+    resetLockoutUiStatus,
+    resetLockoutDetail,
+    setResetLockoutUiStatus,
     setExhaustSafetyCertified,
     simulateSensorFault,
     triggerHighTempAlert,

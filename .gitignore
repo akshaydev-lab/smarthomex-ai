@@ -31,3 +31,9 @@ SmartHomeX_Audit_Files.zip
 SmartHomeX_Security_Audit.zip
 
 supabase/.temp/
+
+# Local ESP32 secrets
+firmware/esp32/config.h
+firmware/SmartHomeX_ESP32/config.h
+firmware/build/
+

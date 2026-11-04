@@ -102,7 +102,7 @@ CREATE TABLE IF NOT EXISTS public.device_commands (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   device_id UUID NOT NULL REFERENCES public.devices(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-  action TEXT NOT NULL CHECK (action IN ('ON', 'OFF')),
+  action TEXT NOT NULL CHECK (action IN ('ON', 'OFF', 'RESET_SAFETY_LOCKOUT')),
   source TEXT NOT NULL CHECK (source IN ('manual', 'schedule', 'master', 'safety_override', 'ai_voice')),
   status TEXT NOT NULL CHECK (status IN ('pending', 'acknowledged', 'failed', 'timeout', 'rejected_gas_safety')) DEFAULT 'pending',
   error_message TEXT,
@@ -125,7 +125,7 @@ CREATE TABLE IF NOT EXISTS public.device_schedules (
   device_id UUID NOT NULL REFERENCES public.devices(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
-  action TEXT NOT NULL CHECK (action IN ('ON', 'OFF')),
+  action TEXT NOT NULL CHECK (action IN ('ON', 'OFF', 'RESET_SAFETY_LOCKOUT')),
   scheduled_time TIME NOT NULL,
   scheduled_date DATE,
   repeat_type TEXT NOT NULL CHECK (repeat_type IN ('once', 'daily', 'weekdays', 'weekends', 'custom')),
@@ -533,6 +533,31 @@ DECLARE
   v_raw_claims TEXT;
 BEGIN
   v_action_upper := UPPER(TRIM(COALESCE(NEW.action, '')));
+
+  -- Safely extract JWT role (fail closed)
+  v_role := NULLIF(TRIM(current_setting('request.jwt.claim.role', true)), '');
+  IF v_role IS NULL THEN
+    v_raw_claims := NULLIF(TRIM(current_setting('request.jwt.claims', true)), '');
+    IF v_raw_claims IS NOT NULL THEN
+      BEGIN
+        v_role := NULLIF(TRIM(v_raw_claims::jsonb ->> 'role'), '');
+      EXCEPTION WHEN OTHERS THEN
+        v_role := NULL;
+      END;
+    END IF;
+  END IF;
+
+  -- 1. Special Handling for RESET_SAFETY_LOCKOUT Command:
+  -- Only the trusted backend hardware gateway (service_role) is authorized to insert
+  -- a RESET_SAFETY_LOCKOUT command into the hardware dispatch queue.
+  -- Direct authenticated / anon clients cannot insert RESET_SAFETY_LOCKOUT directly.
+  IF v_action_upper = 'RESET_SAFETY_LOCKOUT' THEN
+    IF v_role = 'service_role' THEN
+      RETURN NEW;
+    ELSE
+      RAISE EXCEPTION 'UNAUTHORIZED: RESET_SAFETY_LOCKOUT can only be initiated through the authorized gateway safety reset workflow.';
+    END IF;
+  END IF;
 
   IF v_action_upper IN ('OFF', '0', 'FALSE', 'STOP', 'DISABLE', 'EMERGENCY_STOP') THEN
     v_is_energizing := false;

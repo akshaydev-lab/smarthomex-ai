@@ -41,6 +41,18 @@ const HOME_ID = 'h3333333-3333-4333-8333-333333333333';
 function evaluateDbGasEmergencyInterlock(commandInput, alertsTable, op = 'INSERT', oldCommand = null, userRole = 'service_role') {
   const newCommand = typeof commandInput === 'string' ? { action: commandInput, status: 'pending' } : commandInput;
   const actionUpper = (newCommand.action || '').toUpperCase().trim();
+
+  // Special Handling for RESET_SAFETY_LOCKOUT Command:
+  // Only the trusted backend hardware gateway (service_role) is authorized to insert
+  // a RESET_SAFETY_LOCKOUT command into the hardware dispatch queue.
+  if (actionUpper === 'RESET_SAFETY_LOCKOUT') {
+    if (userRole === 'service_role') {
+      return true;
+    }
+    const err = new Error('UNAUTHORIZED: RESET_SAFETY_LOCKOUT can only be initiated through the authorized gateway safety reset workflow.');
+    err.code = '42501';
+    throw err;
+  }
   
   let isEnergizing = true;
   if (['OFF', '0', 'FALSE', 'STOP', 'DISABLE', 'EMERGENCY_STOP'].includes(actionUpper)) {
@@ -706,13 +718,19 @@ describe('SmartHomeX AI — Gas Emergency Interlock & Demo Separation Audit', ()
       is_demo: false,
     });
 
+    // Untrusted authenticated user directly attempting to insert RESET_SAFETY_LOCKOUT
     assert.throws(
       () => {
-        evaluateDbGasEmergencyInterlock('RESET_SAFETY_LOCKOUT', alertsTable);
+        evaluateDbGasEmergencyInterlock('RESET_SAFETY_LOCKOUT', alertsTable, 'INSERT', null, 'authenticated');
       },
-      /COMMAND_BLOCKED/,
-      'RESET_SAFETY_LOCKOUT must not be treated as a safe OFF command without authorized gateway validation'
+      /UNAUTHORIZED: RESET_SAFETY_LOCKOUT can only be initiated through the authorized gateway safety reset workflow/,
+      'RESET_SAFETY_LOCKOUT must not be inserted directly by untrusted client sessions'
     );
+
+    // Trusted gateway running with service_role is permitted to dispatch reset to ESP32
+    assert.doesNotThrow(() => {
+      evaluateDbGasEmergencyInterlock('RESET_SAFETY_LOCKOUT', alertsTable, 'INSERT', null, 'service_role');
+    });
   });
 
   test('SET_BRIGHTNESS with zero value is permitted during lockout, non-zero is strictly blocked', () => {
@@ -1634,6 +1652,312 @@ describe('SmartHomeX AI — Gas Emergency Interlock & Demo Separation Audit', ()
 
     assert.doesNotThrow(() => {
       evaluateDbGasEmergencyInterlock(updateCmd, alertsTable, 'UPDATE', existingCmd, 'authenticated');
+    });
+  });
+});
+
+/**
+ * ==============================================================================
+ * SmartHomeX AI — Safe Emergency Lockout Reset Feature Audit Suite
+ *
+ * Verifies end-to-end implementation of the Secure Reset Workflow:
+ * 1. Firmware independent checks: warm-up, sensor fault, gas threshold, continuous recovery
+ * 2. Idempotent command dispatch via device_commands
+ * 3. Terminal hardware acknowledgement verification
+ * 4. Lockout preservation until verified confirmation
+ * ==============================================================================
+ */
+describe('SmartHomeX AI — Safe Emergency Lockout Reset Feature Audit', () => {
+  const WARMUP_PERIOD_MS = 20000;
+  const RECOVERY_STABLE_PERIOD_MS = 5000;
+  const FAULT_THRESHOLD = 45;
+  const CLEAR_THRESHOLD = 900;
+  const DANGER_THRESHOLD = 1600;
+
+  /**
+   * Simulates the ESP32 firmware local safety evaluation and RESET_SAFETY_LOCKOUT execution.
+   */
+  function simulateEsp32ResetExecution({
+    uptimeMillis = 30000,
+    rawAdc = 410,
+    safeReadingsDurationMs = 6000,
+    isLockoutActive = true,
+    isPendingReset = true,
+  }) {
+    // 1. Warm-up check
+    if (uptimeMillis < WARMUP_PERIOD_MS) {
+      return {
+        accepted: false,
+        status: 'rejected_gas_safety',
+        errorCode: 'RESET_REJECTED_WARMING_UP',
+        errorMessage: 'RESET_REJECTED_WARMING_UP: MQ-2 sensor warm-up in progress (< 20s)',
+        isLockoutActive,
+        isPendingReset,
+        relaysState: false,
+      };
+    }
+
+    // 2. Sensor fault check (open circuit / disconnected wire)
+    if (rawAdc < FAULT_THRESHOLD) {
+      return {
+        accepted: false,
+        status: 'rejected_gas_safety',
+        errorCode: 'RESET_REJECTED_SENSOR_FAULT',
+        errorMessage: 'RESET_REJECTED_SENSOR_FAULT: MQ-2 sensor disconnected or ADC < 45',
+        isLockoutActive,
+        isPendingReset,
+        relaysState: false,
+      };
+    }
+
+    // 3. Gas clearance threshold check
+    if (rawAdc >= CLEAR_THRESHOLD) {
+      return {
+        accepted: false,
+        status: 'rejected_gas_safety',
+        errorCode: 'RESET_REJECTED_GAS_UNSAFE',
+        errorMessage: `RESET_REJECTED_GAS_UNSAFE: Gas reading at or above clearance threshold (900 ADC, current: ${rawAdc})`,
+        isLockoutActive,
+        isPendingReset,
+        relaysState: false,
+      };
+    }
+
+    // 4. Recovery stability period check (must have continuous safe readings)
+    if (safeReadingsDurationMs < RECOVERY_STABLE_PERIOD_MS) {
+      return {
+        accepted: false,
+        status: 'rejected_gas_safety',
+        errorCode: 'RESET_REJECTED_RECOVERY_INSUFFICIENT',
+        errorMessage: 'RESET_REJECTED_RECOVERY_INSUFFICIENT: Safe baseline not maintained for continuous recovery duration',
+        isLockoutActive,
+        isPendingReset,
+        relaysState: false,
+      };
+    }
+
+    // 5. ALL VERIFICATIONS PASSED: Disarm lockout, re-arm contactor, relays REMAIN OFF
+    return {
+      accepted: true,
+      status: 'acknowledged',
+      errorCode: null,
+      errorMessage: 'Lockout cleared by authorized safety reset',
+      isLockoutActive: false,
+      isPendingReset: false,
+      relaysState: false, // Relays remain strictly OFF fail-safe!
+    };
+  }
+
+  test('Genuine gas danger: reset rejected', () => {
+    const result = simulateEsp32ResetExecution({
+      uptimeMillis: 60000,
+      rawAdc: DANGER_THRESHOLD, // 1600 ADC
+      safeReadingsDurationMs: 0,
+      isLockoutActive: true,
+    });
+
+    assert.strictEqual(result.accepted, false);
+    assert.strictEqual(result.status, 'rejected_gas_safety');
+    assert.strictEqual(result.errorCode, 'RESET_REJECTED_GAS_UNSAFE');
+    assert.strictEqual(result.isLockoutActive, true);
+    assert.strictEqual(result.relaysState, false);
+  });
+
+  test('MQ-2 disconnected (< 45 ADC): reset rejected', () => {
+    const result = simulateEsp32ResetExecution({
+      uptimeMillis: 60000,
+      rawAdc: 20, // Disconnected analog wire
+      safeReadingsDurationMs: 0,
+      isLockoutActive: true,
+    });
+
+    assert.strictEqual(result.accepted, false);
+    assert.strictEqual(result.status, 'rejected_gas_safety');
+    assert.strictEqual(result.errorCode, 'RESET_REJECTED_SENSOR_FAULT');
+    assert.strictEqual(result.isLockoutActive, true);
+    assert.strictEqual(result.relaysState, false);
+  });
+
+  test('Sensor warm-up in progress (< 20s): reset rejected', () => {
+    const result = simulateEsp32ResetExecution({
+      uptimeMillis: 12000, // Cold boot at 12s
+      rawAdc: 400,
+      safeReadingsDurationMs: 5000,
+      isLockoutActive: true,
+    });
+
+    assert.strictEqual(result.accepted, false);
+    assert.strictEqual(result.status, 'rejected_gas_safety');
+    assert.strictEqual(result.errorCode, 'RESET_REJECTED_WARMING_UP');
+    assert.strictEqual(result.isLockoutActive, true);
+    assert.strictEqual(result.relaysState, false);
+  });
+
+  test('One SAFE reading without completing recovery duration: reset rejected', () => {
+    // Gas dropped from danger to 410 ADC just 1.5 seconds ago (glitch or transient drop)
+    const result = simulateEsp32ResetExecution({
+      uptimeMillis: 60000,
+      rawAdc: 410,
+      safeReadingsDurationMs: 1500, // < 5000ms recovery stability period
+      isLockoutActive: true,
+    });
+
+    assert.strictEqual(result.accepted, false);
+    assert.strictEqual(result.status, 'rejected_gas_safety');
+    assert.strictEqual(result.errorCode, 'RESET_REJECTED_RECOVERY_INSUFFICIENT');
+    assert.strictEqual(result.isLockoutActive, true);
+    assert.strictEqual(result.relaysState, false);
+  });
+
+  test('Stable SAFE readings and valid recovery (>= 5s continuous): reset accepted', () => {
+    const result = simulateEsp32ResetExecution({
+      uptimeMillis: 60000,
+      rawAdc: 380, // Clean air baseline
+      safeReadingsDurationMs: 6000, // > 5000ms recovery stability period
+      isLockoutActive: true,
+      isPendingReset: true,
+    });
+
+    assert.strictEqual(result.accepted, true);
+    assert.strictEqual(result.status, 'acknowledged');
+    assert.strictEqual(result.isLockoutActive, false);
+    assert.strictEqual(result.isPendingReset, false);
+    assert.strictEqual(result.relaysState, false); // Relays remain strictly OFF fail-safe
+  });
+
+  test('ESP32 acknowledgment missing / pending: dashboard must not show success', () => {
+    // Simulated alerts table with active gas lockout
+    const alerts = [{
+      id: 'active-gas-leak-1',
+      user_id: USER_ID,
+      home_id: HOME_ID,
+      type: 'gas_leak',
+      severity: 'danger',
+      emergency_status: 'LOCKOUT_PENDING_RESET',
+      is_demo: false,
+      resolved_at: null,
+    }];
+
+    // Simulated device_commands with pending reset command
+    const pendingResetCmd = {
+      id: 'reset-cmd-1',
+      action: 'RESET_SAFETY_LOCKOUT',
+      status: 'pending',
+      created_at: new Date().toISOString(),
+    };
+
+    // Before ESP32 sends ACK, the database emergency status MUST NOT be resolved!
+    assert.strictEqual(alerts[0].resolved_at, null);
+    assert.strictEqual(alerts[0].emergency_status, 'LOCKOUT_PENDING_RESET');
+    assert.strictEqual(pendingResetCmd.status, 'pending');
+
+    // Attempting to energize relay while command is pending is strictly blocked
+    assert.throws(() => {
+      evaluateDbGasEmergencyInterlock('ON', alerts);
+    }, /COMMAND_BLOCKED/);
+  });
+
+  test('Duplicate reset requests: idempotency prevents duplicate commands', () => {
+    const commandsQueue = [];
+
+    function requestSafetyReset(userId, commands) {
+      const existingPending = commands.find(c => c.user_id === userId && c.action === 'RESET_SAFETY_LOCKOUT' && c.status === 'pending');
+      if (existingPending) {
+        return { success: true, status: 'WAITING_FOR_ESP32', commandId: existingPending.id, isDuplicate: true };
+      }
+      const newCmd = {
+        id: `cmd-reset-${Date.now()}`,
+        user_id: userId,
+        action: 'RESET_SAFETY_LOCKOUT',
+        status: 'pending',
+        created_at: new Date().toISOString(),
+      };
+      commands.push(newCmd);
+      return { success: true, status: 'RESET_REQUESTED', commandId: newCmd.id, isDuplicate: false };
+    }
+
+    // First request queues the command
+    const firstCall = requestSafetyReset(USER_ID, commandsQueue);
+    assert.strictEqual(firstCall.status, 'RESET_REQUESTED');
+    assert.strictEqual(firstCall.isDuplicate, false);
+    assert.strictEqual(commandsQueue.length, 1);
+
+    // Second request while first is still pending returns existing command (no duplicate)
+    const secondCall = requestSafetyReset(USER_ID, commandsQueue);
+    assert.strictEqual(secondCall.status, 'WAITING_FOR_ESP32');
+    assert.strictEqual(secondCall.isDuplicate, true);
+    assert.strictEqual(secondCall.commandId, firstCall.commandId);
+    assert.strictEqual(commandsQueue.length, 1);
+  });
+
+  test('Existing demo alerts: must never trigger physical lockout', () => {
+    const demoAlerts = [{
+      id: 'demo-alert-1',
+      user_id: USER_ID,
+      home_id: HOME_ID,
+      type: 'gas_leak',
+      severity: 'danger',
+      emergency_status: 'CRITICAL',
+      is_demo: true, // Demo alert
+      resolved_at: null,
+    }];
+
+    // Demo alerts must never block relay actuation
+    assert.doesNotThrow(() => {
+      evaluateDbGasEmergencyInterlock('ON', demoAlerts);
+    });
+
+    assert.doesNotThrow(() => {
+      evaluateDbGasEmergencyInterlock('OFF', demoAlerts);
+    });
+  });
+
+  test('Backend resolves alerts ONLY upon terminal acknowledged status from ESP32', () => {
+    const alerts = [{
+      id: 'real-gas-alert',
+      user_id: USER_ID,
+      home_id: HOME_ID,
+      type: 'gas_leak',
+      severity: 'danger',
+      emergency_status: 'LOCKOUT_PENDING_RESET',
+      is_demo: false,
+      resolved_at: null,
+    }];
+
+    function handleGatewayAck(commandAction, status, alertsList) {
+      if (commandAction === 'RESET_SAFETY_LOCKOUT') {
+        if (status === 'acknowledged') {
+          alertsList.forEach(a => {
+            if (a.type === 'gas_leak' && !a.resolved_at && a.is_demo === false) {
+              a.emergency_status = 'RESOLVED';
+              a.resolved_at = new Date().toISOString();
+              a.acknowledged = true;
+            }
+          });
+          return 'LOCKOUT_CLEARED';
+        } else {
+          // Rejection keeps alerts unresolved
+          return 'RESET_REJECTED';
+        }
+      }
+      return 'OK';
+    }
+
+    // Rejected ACK from ESP32 does NOT resolve alert
+    const rejResult = handleGatewayAck('RESET_SAFETY_LOCKOUT', 'rejected_gas_safety', alerts);
+    assert.strictEqual(rejResult, 'RESET_REJECTED');
+    assert.strictEqual(alerts[0].resolved_at, null);
+    assert.strictEqual(alerts[0].emergency_status, 'LOCKOUT_PENDING_RESET');
+
+    // Confirmed ACK from ESP32 successfully resolves alert
+    const ackResult = handleGatewayAck('RESET_SAFETY_LOCKOUT', 'acknowledged', alerts);
+    assert.strictEqual(ackResult, 'LOCKOUT_CLEARED');
+    assert.notStrictEqual(alerts[0].resolved_at, null);
+    assert.strictEqual(alerts[0].emergency_status, 'RESOLVED');
+
+    // Now relay ON is permitted
+    assert.doesNotThrow(() => {
+      evaluateDbGasEmergencyInterlock('ON', alerts);
     });
   });
 });

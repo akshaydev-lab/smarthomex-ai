@@ -428,29 +428,45 @@ export async function acknowledgeAlertInSupabase(userId: string, alertId: string
   }
 }
 
+import { LockoutResetUiStatus } from '../types';
+
 /**
  * Submits an authorized safety reset to the gateway for server-side atmospheric verification.
- * Only the server-side gateway (running with service_role) can resolve real gas emergency alerts
- * after verifying fresh telemetry (< 900 ADC) and fresh heartbeat.
+ * Implements the full secure reset workflow:
+ * 1. Gateway validates user authorization, device ownership, online status, and ADC baseline.
+ * 2. Dedicated RESET_SAFETY_LOCKOUT command is dispatched to ESP32 for independent hardware verification.
+ * 3. Client awaits ESP32 hardware acknowledgement before marking recovery complete.
  */
-export async function resolveGasAlertsInSupabase(
-  _userId: string, 
-  authorizedBy?: string
-): Promise<{ success: boolean; error?: string }> {
+export async function requestSafeEmergencyLockoutReset(
+  _userId: string,
+  authorizedBy?: string,
+  onStatusUpdate?: (status: LockoutResetUiStatus, detail?: string) => void
+): Promise<{
+  success: boolean;
+  status: LockoutResetUiStatus;
+  commandId?: string;
+  errorMessage?: string;
+}> {
   const client = getSupabaseClient();
   if (!client || !isSupabaseConfigured) {
-    return { success: false, error: 'Supabase client not configured' };
+    return { success: false, status: 'LOCKOUT ACTIVE', errorMessage: 'Supabase client not configured' };
   }
 
   try {
     const { data: { session } } = await client.auth.getSession();
     const token = session?.access_token;
     if (!token) {
-      return { success: false, error: 'User session not found. Please log in.' };
+      return { success: false, status: 'LOCKOUT ACTIVE', errorMessage: 'User session not found. Please log in.' };
     }
 
+    onStatusUpdate?.('RESET REQUESTED', 'Dispatching reset request to gateway...');
+
     const { data, error } = await client.functions.invoke('esp32-gateway?action=safety_reset', {
-      body: { action: 'safety_reset', source: authorizedBy || 'web_dashboard_operator' },
+      body: { 
+        action: 'safety_reset', 
+        source: authorizedBy || 'web_dashboard_operator',
+        operator: authorizedBy || 'Web Dashboard Operator'
+      },
       headers: {
         Authorization: `Bearer ${token}`,
       },
@@ -459,18 +475,139 @@ export async function resolveGasAlertsInSupabase(
 
     if (error) {
       console.warn('Gateway safety_reset invocation error:', error);
-      return { success: false, error: error.message };
+      return { success: false, status: 'LOCKOUT ACTIVE', errorMessage: error.message };
     }
 
     if (data && data.success === false) {
-      return { success: false, error: data.error || 'Safety reset rejected by gateway' };
+      const errMsg = data.error || 'Safety reset rejected by gateway';
+      let rejStatus: LockoutResetUiStatus = 'LOCKOUT ACTIVE';
+      if (errMsg.includes('GAS_UNSAFE') || errMsg.includes('Atmosphere is not safe') || errMsg.includes('exceeds clearance')) {
+        rejStatus = 'RESET REJECTED — GAS UNSAFE';
+      } else if (errMsg.includes('SENSOR_FAULT') || errMsg.includes('disconnected')) {
+        rejStatus = 'RESET REJECTED — SENSOR FAULT';
+      }
+      onStatusUpdate?.(rejStatus, errMsg);
+      return { success: false, status: rejStatus, errorMessage: errMsg };
     }
 
-    return { success: true };
+    // Physical button already executed locally on hardware
+    if (data.status === 'LOCKOUT_CLEARED') {
+      onStatusUpdate?.('LOCKOUT CLEARED', 'Hardware physical reset verified.');
+      return { success: true, status: 'LOCKOUT CLEARED' };
+    }
+
+    const commandId = data.command_id;
+    if (!commandId) {
+      return { success: false, status: 'LOCKOUT ACTIVE', errorMessage: 'No command ID returned from gateway' };
+    }
+
+    onStatusUpdate?.('WAITING FOR ESP32', 'Waiting for ESP32 hardware to poll reset command...');
+
+    // Poll command status until terminal state or timeout
+    const pollResult = await pollResetCommandConfirmation(commandId, token, onStatusUpdate);
+    return pollResult;
   } catch (err: any) {
-    console.warn('resolveGasAlertsInSupabase error:', err);
-    return { success: false, error: err?.message || 'Failed to submit safety reset request' };
+    console.warn('requestSafeEmergencyLockoutReset error:', err);
+    return { success: false, status: 'LOCKOUT ACTIVE', errorMessage: err?.message || 'Failed to submit reset request' };
   }
+}
+
+/**
+ * Polls the dedicated reset command until ESP32 acknowledges or rejects it.
+ */
+export async function pollResetCommandConfirmation(
+  commandId: string,
+  token?: string,
+  onStatusUpdate?: (status: LockoutResetUiStatus, detail?: string) => void,
+  maxTimeoutMs = 12000
+): Promise<{
+  success: boolean;
+  status: LockoutResetUiStatus;
+  errorMessage?: string;
+}> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, status: 'LOCKOUT ACTIVE', errorMessage: 'Supabase client unavailable' };
+  }
+
+  const startTime = Date.now();
+  const pollInterval = 500; // ms
+
+  while (Date.now() - startTime < maxTimeoutMs) {
+    const elapsed = Date.now() - startTime;
+
+    if (elapsed >= 3000) {
+      onStatusUpdate?.('RECOVERY VALIDATION', 'ESP32 evaluating continuous clean-air stability period...');
+    } else {
+      onStatusUpdate?.('WAITING FOR ESP32', 'Waiting for ESP32 hardware node to receive reset command...');
+    }
+
+    try {
+      const { data: cmdRow, error: pollErr } = await client
+        .from('device_commands')
+        .select('id, status, error_message, acknowledged_at')
+        .eq('id', commandId)
+        .maybeSingle();
+
+      if (!pollErr && cmdRow) {
+        if (cmdRow.status === 'acknowledged') {
+          onStatusUpdate?.('LOCKOUT CLEARED', 'ESP32 confirmed clean air and disarmed lockout. Contactor restored.');
+          return {
+            success: true,
+            status: 'LOCKOUT CLEARED',
+          };
+        }
+
+        if (cmdRow.status === 'rejected_gas_safety' || cmdRow.status === 'failed') {
+          const errMsg = cmdRow.error_message || 'ESP32 hardware rejected safety reset';
+          let finalStatus: LockoutResetUiStatus = 'LOCKOUT ACTIVE';
+
+          if (errMsg.includes('GAS_UNSAFE') || errMsg.includes('clearance threshold') || errMsg.includes('900')) {
+            finalStatus = 'RESET REJECTED — GAS UNSAFE';
+          } else if (errMsg.includes('SENSOR_FAULT') || errMsg.includes('disconnected') || errMsg.includes('45')) {
+            finalStatus = 'RESET REJECTED — SENSOR FAULT';
+          } else if (errMsg.includes('WARMING_UP')) {
+            finalStatus = 'RESET REJECTED — SENSOR FAULT';
+          }
+
+          onStatusUpdate?.(finalStatus, errMsg);
+          return {
+            success: false,
+            status: finalStatus,
+            errorMessage: errMsg,
+          };
+        }
+      }
+    } catch {
+      // transient network glitch during polling; continue loop
+    }
+
+    await new Promise(res => setTimeout(res, pollInterval));
+  }
+
+  const timeoutMsg = 'ESP32 CONTROLLER TIMEOUT: Hardware node did not acknowledge safety reset within 12s. Lockout remains active.';
+  onStatusUpdate?.('LOCKOUT ACTIVE', timeoutMsg);
+  return {
+    success: false,
+    status: 'LOCKOUT ACTIVE',
+    errorMessage: timeoutMsg,
+  };
+}
+
+/**
+ * Submits an authorized safety reset to the gateway for server-side atmospheric verification.
+ * Only the server-side gateway (running with service_role) can resolve real gas emergency alerts
+ * after verifying fresh telemetry (< 900 ADC) and fresh heartbeat.
+ */
+export async function resolveGasAlertsInSupabase(
+  userId: string, 
+  authorizedBy?: string
+): Promise<{ success: boolean; error?: string }> {
+  const result = await requestSafeEmergencyLockoutReset(userId, authorizedBy);
+  return {
+    success: result.success,
+    error: result.errorMessage,
+  };
 }
 
 /**

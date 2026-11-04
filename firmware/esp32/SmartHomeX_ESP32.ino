@@ -17,6 +17,7 @@
 #include <Adafruit_INA219.h>
 #include <DHT.h>
 #include <Preferences.h>
+#include <time.h>
 #include "config.h"
 
 // Non-Volatile Storage for persistent command deduplication across reboots
@@ -64,6 +65,10 @@ bool isMainContactorTripped   = false;
 bool gasClearedPendingReset   = false;
 bool isSensorFaultActive      = false;
 
+// Continuous Safe Reading Duration Tracking (Guards against single-reading recovery glitches)
+unsigned long safeReadingsStartMillis = 0;
+bool isRecoveryStable = false;
+
 unsigned long lastGasCheckMillis = 0;
 unsigned long buzzerLastToggleMillis = 0;
 bool buzzerToneState = false;
@@ -76,7 +81,31 @@ bool lastResetBtnState = HIGH;
 unsigned long lastTelemetryMillis = 0;
 unsigned long lastCommandPollMillis = 0;
 unsigned long lastHeartbeatMillis = 0;
-unsigned long lastWiFiRetryMillis = 0;
+// Note: lastWifiRetryMillis is declared with the Wi-Fi state machine block below.
+unsigned long lastLockoutDiagMillis = 0; // 1-second Serial Monitor diagnostics
+
+// HTTPS Connectivity & Health Watchdog Tracking
+unsigned long lastHttpsDiagMillis = 0;
+int consecutiveHttpFailures = 0;
+IPAddress resolvedSupabaseIp;
+bool supabaseDnsResolved = false;
+
+// ------------------------------------------------------------------------------
+// Serialized Wi-Fi Connection State Machine (Requirements 5, 6, 8)
+// States: DISCONNECTED -> CONNECTING -> CONNECTED
+// Enforces zero overlapping begin() calls and zero config changes while connecting
+// ------------------------------------------------------------------------------
+enum WifiState {
+  WIFI_STATE_DISCONNECTED,
+  WIFI_STATE_CONNECTING,
+  WIFI_STATE_CONNECTED
+};
+
+WifiState currentWifiState = WIFI_STATE_DISCONNECTED;
+unsigned long wifiStateEnteredMillis = 0;
+unsigned long lastWifiRetryMillis = 0;
+uint32_t wifiReconnectAttempts = 0;
+wl_status_t lastReportedWifiStatus = WL_DISCONNECTED;
 
 // Command Deduplication Ring Cache (prevents re-executing unacknowledged commands during network drops)
 char lastExecutedCmdId[48] = "";
@@ -88,6 +117,12 @@ void initPersistentDeduplication();
 void setupHardwarePins();
 void checkLocalGasSafety();
 void checkPhysicalResetButton();
+void printLockoutDiagnostics();
+const char* wifiStatusToString(wl_status_t status);
+void startWifiConnection(const char* reason);
+void updateWifiStateMachine();
+void configureTlsClient(WiFiClientSecure &client);
+bool testSupabaseHttpsConnectivity(bool verbose = true);
 void readINA219();
 void readDHT11();
 void updateMotorRuntimeGuard();
@@ -96,7 +131,7 @@ void reportSafetyResetToSupabase(const char* source);
 bool setRelayState(int channel, bool targetState);
 void sendTelemetryToSupabase();
 void pollPendingCommandsFromSupabase();
-void ackCommandToSupabase(const char* commandId, const char* deviceId, const char* status, bool actualState, const char* errMsg, int rttMs);
+int ackCommandToSupabase(const char* commandId, const char* deviceId, const char* status, bool actualState, const char* errMsg, int rttMs);
 void sendHeartbeatToSupabase();
 
 // ==============================================================================
@@ -133,29 +168,23 @@ void setup() {
   analogReadResolution(12); // ESP32 12-bit ADC (0 - 4095)
   checkLocalGasSafety();
 
-  // 5. Connect to Wi-Fi
-  Serial.print(F("[WIFI] Connecting to "));
-  Serial.println(WIFI_SSID);
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  // 5. Connect to Wi-Fi (Serialized State Machine - Requirements 5, 6, 8)
+  startWifiConnection("Initial Boot Sequence");
 
+  // Wait for association with a bounded timeout while servicing local safety loop
   unsigned long startAttempt = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < WIFI_CONNECT_TIMEOUT_MS) {
+  while (currentWifiState == WIFI_STATE_CONNECTING && (millis() - startAttempt < WIFI_CONNECT_TIMEOUT_MS)) {
     delay(250);
-    Serial.print(F("."));
     // Keep local safety loop alive even during Wi-Fi boot!
     checkLocalGasSafety();
+    updateWifiStateMachine();
   }
-  Serial.println();
 
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.print(F("[WIFI] Connected! Assigned IP: "));
-    Serial.println(WiFi.localIP());
-    Serial.print(F("[WIFI] Signal Strength (RSSI): "));
-    Serial.print(WiFi.RSSI());
-    Serial.println(F(" dBm"));
+  if (currentWifiState == WIFI_STATE_CONNECTED) {
+    Serial.println(F("[SYSTEM] Network link established. Running connectivity diagnostics..."));
+    testSupabaseHttpsConnectivity(true);
   } else {
-    Serial.println(F("[WIFI] Initial connection timed out. Background retry active."));
+    Serial.println(F("[WIFI STATUS] IP=N/A. All relays remain safely OFF. Background state machine will maintain reconnection."));
   }
 
   lastEnergyCalcMillis = millis();
@@ -179,20 +208,37 @@ void loop() {
   }
 
   // ---------------------------------------------------------------------------
+  // Priority 1b: Emergency Lockout Diagnostic Logging (Every 1000ms / 1 second)
+  // Non-blocking serial diagnostics at 115200 baud for lockout reset tracing
+  // ---------------------------------------------------------------------------
+  if (currentMillis - lastLockoutDiagMillis >= 1000) {
+    lastLockoutDiagMillis = currentMillis;
+    printLockoutDiagnostics();
+  }
+
+  // ---------------------------------------------------------------------------
   // Priority 2: Water Motor 30-Minute Continuous Run-Time Auto Cutoff
   // ---------------------------------------------------------------------------
   updateMotorRuntimeGuard();
 
   // ---------------------------------------------------------------------------
-  // Priority 3: Non-Blocking Wi-Fi Reconnection Watchdog
+  // Priority 3: Serialized Wi-Fi Connection State Machine (Requirements 5, 6, 8)
+  // DISCONNECTED -> CONNECTING -> CONNECTED. Non-blocking, zero overlapping begin()
   // ---------------------------------------------------------------------------
-  if (WiFi.status() != WL_CONNECTED) {
-    if (currentMillis - lastWiFiRetryMillis >= WIFI_RETRY_INTERVAL_MS) {
-      lastWiFiRetryMillis = currentMillis;
-      Serial.println(F("[WIFI] Reconnecting to Wi-Fi in background..."));
-      WiFi.reconnect();
-    }
-    return; // Skip cloud requests until Wi-Fi re-establishes
+  updateWifiStateMachine();
+
+  if (currentWifiState != WIFI_STATE_CONNECTED || WiFi.status() != WL_CONNECTED) {
+    return; // Inhibit cloud network calls until Wi-Fi is fully established
+  }
+
+  // ---------------------------------------------------------------------------
+  // Priority 3b: Automatic HTTPS Diagnostic Trigger on Consecutive Failures
+  // ---------------------------------------------------------------------------
+  if (consecutiveHttpFailures >= 3 && (currentMillis - lastHttpsDiagMillis >= 30000)) {
+    lastHttpsDiagMillis = currentMillis;
+    Serial.println();
+    Serial.println(F("[WATCHDOG] Multiple consecutive HTTPS request failures detected. Running diagnostic suite..."));
+    testSupabaseHttpsConnectivity(false);
   }
 
   // ---------------------------------------------------------------------------
@@ -237,6 +283,117 @@ void initPersistentDeduplication() {
     Serial.println(lastExecutedCmdId);
   } else {
     Serial.println(F("[NVS PERSISTENCE] No prior command ID stored in flash. Ready."));
+  }
+}
+
+// ==============================================================================
+// Wi-Fi Status Diagnostic Helper (Requirement 6)
+// ==============================================================================
+const char* wifiStatusToString(wl_status_t status) {
+  switch (status) {
+    case WL_NO_SHIELD:       return "WL_NO_SHIELD";
+    case WL_IDLE_STATUS:     return "WL_IDLE_STATUS (Connecting...)";
+    case WL_NO_SSID_AVAIL:   return "WL_NO_SSID_AVAIL (SSID Not Found)";
+    case WL_SCAN_COMPLETED:  return "WL_SCAN_COMPLETED";
+    case WL_CONNECTED:       return "WL_CONNECTED";
+    case WL_CONNECT_FAILED:  return "WL_CONNECT_FAILED";
+    case WL_CONNECTION_LOST: return "WL_CONNECTION_LOST";
+    case WL_DISCONNECTED:    return "WL_DISCONNECTED";
+    default:                 return "WL_UNKNOWN";
+  }
+}
+
+// ==============================================================================
+// Serialized Wi-Fi Connection State Machine Implementation (Requirements 5, 6, 8)
+// Guarantees strictly serialized state transitions:
+// DISCONNECTED -> CONNECTING -> CONNECTED
+// Enforces zero overlapping begin() calls, zero config modifications during connection,
+// and clean timeouts via disconnect(false). Standard DHCP is strictly preserved.
+// ==============================================================================
+void startWifiConnection(const char* reason) {
+  if (currentWifiState == WIFI_STATE_CONNECTING) {
+    // Strictly serialized: do not issue overlapping attempts while connecting
+    return;
+  }
+
+  wifiReconnectAttempts++;
+  currentWifiState = WIFI_STATE_CONNECTING;
+  wifiStateEnteredMillis = millis();
+
+  Serial.println();
+  Serial.print(F("[WIFI] Reconnect Attempt #"));
+  Serial.print(wifiReconnectAttempts);
+  Serial.print(F(" -> Initiating connection to SSID: '"));
+  Serial.print(WIFI_SSID);
+  Serial.print(F("' (Reason: "));
+  Serial.print(reason);
+  Serial.println(F(")"));
+
+  // Only configure Station mode when disconnected prior to begin
+  WiFi.persistent(false);
+  WiFi.mode(WIFI_STA);
+  // Preserves standard DHCP. Never calls WiFi.config() or modifies station config.
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+}
+
+void updateWifiStateMachine() {
+  unsigned long currentMillis = millis();
+  wl_status_t status = WiFi.status();
+
+  switch (currentWifiState) {
+    case WIFI_STATE_DISCONNECTED: {
+      if (currentMillis - lastWifiRetryMillis >= WIFI_RETRY_INTERVAL_MS) {
+        lastWifiRetryMillis = currentMillis;
+        startWifiConnection("Periodic retry interval elapsed");
+      }
+      break;
+    }
+
+    case WIFI_STATE_CONNECTING: {
+      if (status == WL_CONNECTED) {
+        currentWifiState = WIFI_STATE_CONNECTED;
+        wifiStateEnteredMillis = currentMillis;
+        lastWifiRetryMillis = currentMillis;
+
+        Serial.println(F("[WIFI STATE] CONNECTING -> CONNECTED"));
+        Serial.println(F("[WIFI STATUS] Connected successfully via DHCP!"));
+        Serial.print(F("[WIFI STATUS] Assigned IP   : ")); Serial.println(WiFi.localIP());
+        Serial.print(F("[WIFI STATUS] Subnet Mask   : ")); Serial.println(WiFi.subnetMask());
+        Serial.print(F("[WIFI STATUS] Gateway IP    : ")); Serial.println(WiFi.gatewayIP());
+        Serial.print(F("[WIFI STATUS] Primary DNS   : ")); Serial.println(WiFi.dnsIP(0));
+        Serial.print(F("[WIFI STATUS] Secondary DNS : ")); Serial.println(WiFi.dnsIP(1));
+        Serial.print(F("[WIFI STATUS] RSSI (Signal) : ")); Serial.print(WiFi.RSSI()); Serial.println(F(" dBm"));
+
+        // Initialize SNTP for TLS certificate validation
+        configTime(0, 0, "pool.ntp.org", "time.google.com");
+      } else if (currentMillis - wifiStateEnteredMillis >= WIFI_CONNECT_TIMEOUT_MS || status == WL_CONNECT_FAILED) {
+        Serial.print(F("[WIFI STATE] CONNECTING -> DISCONNECTED (Reason: "));
+        if (status == WL_CONNECT_FAILED) {
+          Serial.println(F("Association/Authentication failed)"));
+        } else {
+          Serial.println(F("Connection timeout)"));
+        }
+        // Cleanly terminate in-flight handshake so ESP-IDF state is not left connecting
+        WiFi.disconnect(false);
+        currentWifiState = WIFI_STATE_DISCONNECTED;
+        wifiStateEnteredMillis = currentMillis;
+        lastWifiRetryMillis = currentMillis;
+      }
+      break;
+    }
+
+    case WIFI_STATE_CONNECTED: {
+      if (status != WL_CONNECTED) {
+        Serial.print(F("[WIFI STATE] CONNECTED -> DISCONNECTED (Reason: Link lost, status: "));
+        Serial.print(wifiStatusToString(status));
+        Serial.println(F(")"));
+        WiFi.disconnect(false);
+        currentWifiState = WIFI_STATE_DISCONNECTED;
+        wifiStateEnteredMillis = currentMillis;
+        lastWifiRetryMillis = currentMillis;
+      }
+      break;
+    }
   }
 }
 
@@ -289,6 +446,8 @@ void checkLocalGasSafety() {
   if (millis() < MQ2_WARMUP_PERIOD_MS) {
     gasStatus = "warming_up";
     isSensorFaultActive = false;
+    safeReadingsStartMillis = 0;
+    isRecoveryStable = false;
     return;
   }
 
@@ -298,6 +457,8 @@ void checkLocalGasSafety() {
   if (lastRawAdc < MQ2_ADC_FAULT_THRESHOLD) {
     isSensorFaultActive = true;
     gasStatus = "sensor_fault";
+    safeReadingsStartMillis = 0;
+    isRecoveryStable = false;
     
     // Intermittent double-beep fault alert
     unsigned long now = millis();
@@ -320,6 +481,8 @@ void checkLocalGasSafety() {
   if (lastRawAdc >= MQ2_ADC_DANGER_THRESHOLD) {
     gasStatus = "danger";
     gasClearedPendingReset = false;
+    safeReadingsStartMillis = 0;
+    isRecoveryStable = false;
 
     if (!isGasLockoutActive) {
       isGasLockoutActive = true;
@@ -365,6 +528,9 @@ void checkLocalGasSafety() {
   } 
   else if (lastRawAdc >= MQ2_ADC_WARNING_THRESHOLD) {
     gasStatus = "warning";
+    safeReadingsStartMillis = 0;
+    isRecoveryStable = false;
+
     // Intermittent warning beep (once every 1.5s)
     unsigned long now = millis();
     if (now - buzzerLastToggleMillis >= 1500) {
@@ -376,6 +542,13 @@ void checkLocalGasSafety() {
   } 
   else {
     gasStatus = "safe";
+
+    // Track continuous safe readings for recovery stability verification
+    if (safeReadingsStartMillis == 0) {
+      safeReadingsStartMillis = millis();
+    } else if (millis() - safeReadingsStartMillis >= MQ2_RECOVERY_STABLE_PERIOD_MS) {
+      isRecoveryStable = true;
+    }
 
     // 4. Gas Cleared Logic:
     // If gas drops below clearance threshold, silence audible siren,
@@ -415,9 +588,10 @@ void checkPhysicalResetButton() {
       if (!isGasLockoutActive && !gasClearedPendingReset) {
         Serial.println(F("[MANUAL RESET] System is already in normal operational state."));
       } else {
-        // Enforce safety precondition: Gas concentration MUST be below clearance threshold and sensor healthy!
-        if (lastRawAdc < MQ2_ADC_CLEAR_THRESHOLD && !isSensorFaultActive && gasStatus != "warming_up") {
-          Serial.println(F("[MANUAL RESET APPROVED] Gas level verified SAFE. Disarming lockout..."));
+        // Enforce safety precondition: Gas concentration MUST be below clearance threshold,
+        // sensor verified healthy, warm-up complete, and stable baseline maintained for recovery duration!
+        if (millis() >= MQ2_WARMUP_PERIOD_MS && !isSensorFaultActive && lastRawAdc >= MQ2_ADC_FAULT_THRESHOLD && lastRawAdc < MQ2_ADC_CLEAR_THRESHOLD && isRecoveryStable) {
+          Serial.println(F("[MANUAL RESET APPROVED] Gas level verified SAFE and stable. Disarming lockout..."));
           isGasLockoutActive = false;
           gasClearedPendingReset = false;
           isMainContactorTripped = false;
@@ -443,7 +617,7 @@ void checkPhysicalResetButton() {
           // Report safety reset to Supabase
           reportSafetyResetToSupabase("physical_button_gpio0");
         } else {
-          Serial.println(F("[MANUAL RESET REJECTED] Cannot reset! Gas level is still unsafe or sensor fault active."));
+          Serial.println(F("[MANUAL RESET REJECTED] Cannot reset: Atmosphere unsafe, sensor fault active, warm-up in progress, or stable recovery duration not met."));
           // Reject tone (long low pulse)
           digitalWrite(PIN_BUZZER, HIGH); delay(300);
           digitalWrite(PIN_BUZZER, LOW);
@@ -452,6 +626,29 @@ void checkPhysicalResetButton() {
     }
   }
   lastResetBtnState = reading;
+}
+
+// ==============================================================================
+// Diagnostic Logging Routine: Local Gas Safety & Lockout State (Every 1 Second)
+// Displays ground-truth hardware metrics at 115200 baud for issue tracing.
+// ==============================================================================
+void printLockoutDiagnostics() {
+  unsigned long now = millis();
+  unsigned long elapsedSafeRecoveryMs = (safeReadingsStartMillis > 0) ? (now - safeReadingsStartMillis) : 0;
+  bool warmupComplete = (now >= MQ2_WARMUP_PERIOD_MS);
+
+  Serial.println();
+  Serial.println(F("---------- [ESP32 GAS LOCKOUT DIAGNOSTIC] ----------"));
+  Serial.print(F("1. lastRawAdc                   : ")); Serial.println(lastRawAdc);
+  Serial.print(F("2. gasStatus                    : ")); Serial.println(gasStatus);
+  Serial.print(F("3. isSensorFaultActive          : ")); Serial.println(isSensorFaultActive ? F("TRUE (FAULT)") : F("FALSE (HEALTHY)"));
+  Serial.print(F("4. isGasLockoutActive           : ")); Serial.println(isGasLockoutActive ? F("TRUE (LOCKED OUT)") : F("FALSE (NORMAL)"));
+  Serial.print(F("5. gasClearedPendingReset       : ")); Serial.println(gasClearedPendingReset ? F("TRUE (AWAITING RESET)") : F("FALSE"));
+  Serial.print(F("6. safeReadingsStartMillis      : ")); Serial.println(safeReadingsStartMillis);
+  Serial.print(F("7. elapsedSafeRecoveryMs        : ")); Serial.print(elapsedSafeRecoveryMs); Serial.print(F(" ms (Required: ")); Serial.print(MQ2_RECOVERY_STABLE_PERIOD_MS); Serial.println(F(" ms)"));
+  Serial.print(F("8. isRecoveryStable             : ")); Serial.println(isRecoveryStable ? F("TRUE (STABLE)") : F("FALSE (UNSTABLE)"));
+  Serial.print(F("9. millis() vs Warmup Comparison: ")); Serial.print(now); Serial.print(F(" ms / ")); Serial.print(MQ2_WARMUP_PERIOD_MS); Serial.print(F(" ms (Warmup Complete: ")); Serial.print(warmupComplete ? F("YES") : F("NO")); Serial.println(F(")"));
+  Serial.println(F("----------------------------------------------------"));
 }
 
 // ==============================================================================
@@ -538,39 +735,55 @@ void reportMotorTripToSupabase() {
   if (WiFi.status() != WL_CONNECTED) return;
 
   WiFiClientSecure client;
-  client.setInsecure();
+  configureTlsClient(client);
 
   HTTPClient https;
   String endpoint = String(SUPABASE_GATEWAY_URL) + "?action=motor_trip";
 
-  if (https.begin(client, endpoint)) {
-    https.addHeader("Content-Type", "application/json");
-    https.addHeader("x-device-token", ESP32_DEVICE_TOKEN);
-    https.addHeader("apikey", SUPABASE_ANON_KEY);
-    https.setTimeout(2500);
+  if (!https.begin(client, endpoint)) {
+    Serial.print(F("[MOTOR PROTECTION ERROR] HTTPClient::begin() failed for endpoint: "));
+    Serial.println(endpoint);
+    return;
+  }
 
-    StaticJsonDocument<128> doc;
-    doc["device_slug"] = "relay-3";
-    doc["status"] = "auto_cutoff_30m";
+  https.addHeader("Content-Type", "application/json");
+  https.addHeader("x-device-token", ESP32_DEVICE_TOKEN);
+  https.addHeader("apikey", SUPABASE_ANON_KEY);
+  https.setTimeout(2500);
 
-    String jsonPayload;
-    serializeJson(doc, jsonPayload);
-    int httpCode = https.POST(jsonPayload);
-    if (httpCode == 200) {
-      Serial.println(F("[MOTOR PROTECTION] Cutoff reported to Supabase."));
+  StaticJsonDocument<128> doc;
+  doc["device_slug"] = "relay-3";
+  doc["status"] = "auto_cutoff_30m";
+
+  String jsonPayload;
+  serializeJson(doc, jsonPayload);
+  int httpCode = https.POST(jsonPayload);
+  if (httpCode == 200) {
+    Serial.println(F("[MOTOR PROTECTION] Cutoff reported to Supabase."));
+  } else {
+    Serial.print(F("[MOTOR PROTECTION ERROR] HTTP Status: "));
+    Serial.print(httpCode);
+    if (httpCode < 0) {
+      Serial.print(F(" ("));
+      Serial.print(https.errorToString(httpCode));
+      Serial.print(F(")"));
+    }
+    Serial.println();
+    if (httpCode < 0) {
+      Serial.print(F("[MOTOR PROTECTION DIAGNOSTIC] Outbound TLS failed. Target: "));
+      Serial.print(SUPABASE_HOST);
+      Serial.print(F(":443 | Free Heap: "));
+      Serial.print(ESP.getFreeHeap());
+      Serial.println(F(" B"));
     } else {
-      Serial.print(F("[MOTOR PROTECTION ERROR] HTTP Status: "));
-      Serial.println(httpCode);
-      if (httpCode > 0) {
-        String errResp = https.getString();
-        if (errResp.length() > 0) {
-          Serial.print(F("[MOTOR PROTECTION ERROR BODY] "));
-          Serial.println(errResp);
-        }
+      String errResp = https.getString();
+      if (errResp.length() > 0) {
+        Serial.print(F("[MOTOR PROTECTION ERROR BODY] "));
+        Serial.println(errResp);
       }
     }
-    https.end();
   }
+  https.end();
 }
 
 // ==============================================================================
@@ -580,41 +793,57 @@ void reportSafetyResetToSupabase(const char* source) {
   if (WiFi.status() != WL_CONNECTED) return;
 
   WiFiClientSecure client;
-  client.setInsecure();
+  configureTlsClient(client);
 
   HTTPClient https;
   String endpoint = String(SUPABASE_GATEWAY_URL) + "?action=safety_reset";
 
-  if (https.begin(client, endpoint)) {
-    https.addHeader("Content-Type", "application/json");
-    https.addHeader("x-device-token", ESP32_DEVICE_TOKEN);
-    https.addHeader("apikey", SUPABASE_ANON_KEY);
-    https.setTimeout(3000);
+  if (!https.begin(client, endpoint)) {
+    Serial.print(F("[SAFETY RESET ERROR] HTTPClient::begin() failed for endpoint: "));
+    Serial.println(endpoint);
+    return;
+  }
 
-    StaticJsonDocument<256> doc;
-    doc["source"] = source;
-    doc["gas_ppm"] = nullptr;
-    doc["raw_adc"] = lastRawAdc;
-    doc["status"] = "NORMAL";
+  https.addHeader("Content-Type", "application/json");
+  https.addHeader("x-device-token", ESP32_DEVICE_TOKEN);
+  https.addHeader("apikey", SUPABASE_ANON_KEY);
+  https.setTimeout(3000);
 
-    String jsonPayload;
-    serializeJson(doc, jsonPayload);
-    int httpCode = https.POST(jsonPayload);
-    if (httpCode == 200) {
-      Serial.println(F("[SAFETY RESET] Reset event logged in Supabase."));
+  StaticJsonDocument<256> doc;
+  doc["source"] = source;
+  doc["gas_ppm"] = nullptr;
+  doc["raw_adc"] = lastRawAdc;
+  doc["status"] = "NORMAL";
+
+  String jsonPayload;
+  serializeJson(doc, jsonPayload);
+  int httpCode = https.POST(jsonPayload);
+  if (httpCode == 200) {
+    Serial.println(F("[SAFETY RESET] Reset event logged in Supabase."));
+  } else {
+    Serial.print(F("[SAFETY RESET ERROR] HTTP Status: "));
+    Serial.print(httpCode);
+    if (httpCode < 0) {
+      Serial.print(F(" ("));
+      Serial.print(https.errorToString(httpCode));
+      Serial.print(F(")"));
+    }
+    Serial.println();
+    if (httpCode < 0) {
+      Serial.print(F("[SAFETY RESET DIAGNOSTIC] Outbound TLS failed. Target: "));
+      Serial.print(SUPABASE_HOST);
+      Serial.print(F(":443 | Free Heap: "));
+      Serial.print(ESP.getFreeHeap());
+      Serial.println(F(" B"));
     } else {
-      Serial.print(F("[SAFETY RESET ERROR] HTTP Status: "));
-      Serial.println(httpCode);
-      if (httpCode > 0) {
-        String errResp = https.getString();
-        if (errResp.length() > 0) {
-          Serial.print(F("[SAFETY RESET ERROR BODY] "));
-          Serial.println(errResp);
-        }
+      String errResp = https.getString();
+      if (errResp.length() > 0) {
+        Serial.print(F("[SAFETY RESET ERROR BODY] "));
+        Serial.println(errResp);
       }
     }
-    https.end();
   }
+  https.end();
 }
 
 // ==============================================================================
@@ -693,22 +922,214 @@ void readDHT11() {
 }
 
 // ==============================================================================
+// Secure TLS Client Configuration (Requirement 9)
+// ==============================================================================
+void configureTlsClient(WiFiClientSecure &client) {
+  client.setCACert(SUPABASE_ROOT_CA_CERT);
+  client.setHandshakeTimeout(10000); // 10-second TLS handshake budget
+}
+
+// ==============================================================================
+// Comprehensive Supabase HTTPS, DNS, TCP, and TLS Diagnostics
+// ==============================================================================
+bool testSupabaseHttpsConnectivity(bool verbose) {
+  Serial.println();
+  Serial.println(F("=================================================="));
+  Serial.println(F("   [SUPABASE HTTPS & NETWORK DIAGNOSTIC SUITE]   "));
+  Serial.println(F("=================================================="));
+
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println(F("[DIAGNOSTIC FAILED] Wi-Fi is disconnected. Cannot probe Supabase."));
+    Serial.println(F("=================================================="));
+    return false;
+  }
+
+  // 1. Local Network Configuration Diagnostics
+  Serial.println(F("--- 1. Network Interface & IP Configuration ---"));
+  Serial.print(F("Local IP Assigned    : ")); Serial.println(WiFi.localIP());
+  Serial.print(F("Subnet Mask          : ")); Serial.println(WiFi.subnetMask());
+  Serial.print(F("Gateway IP           : ")); Serial.println(WiFi.gatewayIP());
+  Serial.print(F("Primary DNS Server   : ")); Serial.println(WiFi.dnsIP(0));
+  Serial.print(F("Secondary DNS Server : ")); Serial.println(WiFi.dnsIP(1));
+  Serial.print(F("Wi-Fi RSSI (Signal)  : ")); Serial.print(WiFi.RSSI()); Serial.println(F(" dBm"));
+  Serial.print(F("Internal Free Heap   : ")); Serial.print(ESP.getFreeHeap()); Serial.println(F(" bytes"));
+  Serial.print(F("Max Alloc Heap Block : ")); Serial.print(ESP.getMaxAllocHeap()); Serial.println(F(" bytes"));
+
+  // 2. DNS Resolution Diagnostic for pacejovitiwmoucyzkzy.supabase.co
+  Serial.println(F("\n--- 2. DNS Hostname Resolution Diagnostic ---"));
+  Serial.print(F("Target Hostname      : ")); Serial.println(SUPABASE_HOST);
+
+  IPAddress resolvedIP;
+  unsigned long dnsStart = millis();
+  int dnsResult = WiFi.hostByName(SUPABASE_HOST, resolvedIP);
+  unsigned long dnsElapsed = millis() - dnsStart;
+
+  if (dnsResult == 1 && resolvedIP != IPAddress(0, 0, 0, 0)) {
+    resolvedSupabaseIp = resolvedIP;
+    supabaseDnsResolved = true;
+    Serial.print(F("[DNS SUCCESS] Host '"));
+    Serial.print(SUPABASE_HOST);
+    Serial.print(F("' resolved to IP: "));
+    Serial.print(resolvedIP);
+    Serial.print(F(" (Elapsed: "));
+    Serial.print(dnsElapsed);
+    Serial.println(F(" ms)"));
+  } else {
+    supabaseDnsResolved = false;
+    Serial.print(F("[DNS FAILURE] Could not resolve host '"));
+    Serial.print(SUPABASE_HOST);
+    Serial.print(F("'! Return code: "));
+    Serial.print(dnsResult);
+    Serial.print(F(" (Elapsed: "));
+    Serial.print(dnsElapsed);
+    Serial.println(F(" ms)"));
+    Serial.print(F("[DNS ROOT CAUSE] Current DHCP DNS server ("));
+    Serial.print(WiFi.dnsIP(0));
+    Serial.println(F(") failed to return an IP address for Supabase."));
+    Serial.println(F("[DNS NOTICE] Relying strictly on normal DHCP-provided DNS (Requirement 4)."));
+    Serial.println(F("=================================================="));
+    return false;
+  }
+
+  // 3. Raw TCP Socket Connectivity Test to Port 443
+  Serial.println(F("\n--- 3. TCP Port 443 Egress Connectivity Diagnostic ---"));
+  Serial.print(F("Connecting raw TCP socket to "));
+  Serial.print(resolvedSupabaseIp);
+  Serial.print(F(":"));
+  Serial.print(SUPABASE_PORT);
+  Serial.println(F(" (timeout 4000ms)..."));
+
+  WiFiClient tcpClient;
+  tcpClient.setTimeout(4000);
+  unsigned long tcpStart = millis();
+  bool tcpConnected = tcpClient.connect(resolvedSupabaseIp, SUPABASE_PORT);
+  unsigned long tcpElapsed = millis() - tcpStart;
+
+  if (tcpConnected) {
+    Serial.print(F("[TCP SUCCESS] Raw TCP socket connection established in "));
+    Serial.print(tcpElapsed);
+    Serial.println(F(" ms. Egress port 443 is OPEN and reachable through local router/firewall."));
+    tcpClient.stop();
+  } else {
+    Serial.print(F("[TCP FAILURE] Failed to establish raw TCP connection to "));
+    Serial.print(resolvedSupabaseIp);
+    Serial.print(F(":443 after "));
+    Serial.print(tcpElapsed);
+    Serial.println(F(" ms."));
+    Serial.println(F("[TCP ROOT CAUSE] Network firewall, router egress filter, or captive portal is blocking outbound TCP traffic to port 443."));
+    Serial.println(F("=================================================="));
+    return false;
+  }
+
+  // 4. SNTP Clock & Certificate Validity Pre-Check
+  Serial.println(F("\n--- 4. SNTP Clock Synchronization Diagnostic ---"));
+  time_t now = time(nullptr);
+  Serial.print(F("System Clock Epoch   : ")); Serial.print((unsigned long)now);
+  if (now < 1700000000) { // Prior to 2024
+    Serial.println(F(" [WARNING: SNTP time not yet synced; clock remains in 1970]"));
+    Serial.println(F("[SNTP DIAGNOSTIC] X.509 certificate validation verifies validity dates against the system clock."));
+    Serial.println(F("[SNTP DIAGNOSTIC] If local network blocks UDP port 123 (NTP), certificate validation may fail."));
+  } else {
+    Serial.println(F(" [OK: SNTP synchronized]"));
+  }
+
+  // 5. TLS Handshake & Certificate Validation Diagnostic
+  Serial.println(F("\n--- 5. TLS Handshake & Certificate Validation Diagnostic ---"));
+  Serial.println(F("Certificate Mode     : STRICT (ISRG Root X1 CA validation enforced - Requirement 9)"));
+  Serial.print(F("Initiating TLS handshake with "));
+  Serial.print(SUPABASE_HOST);
+  Serial.println(F(":443..."));
+
+  WiFiClientSecure sslDiagClient;
+  configureTlsClient(sslDiagClient);
+  sslDiagClient.setTimeout(8000);
+
+  uint32_t heapBeforeHandshake = ESP.getFreeHeap();
+  unsigned long tlsStart = millis();
+  bool tlsConnected = sslDiagClient.connect(SUPABASE_HOST, SUPABASE_PORT);
+  unsigned long tlsElapsed = millis() - tlsStart;
+  uint32_t heapAfterHandshake = ESP.getFreeHeap();
+
+  if (tlsConnected) {
+    Serial.print(F("[TLS SUCCESS] TLS handshake successfully completed in "));
+    Serial.print(tlsElapsed);
+    Serial.println(F(" ms!"));
+    Serial.print(F("[TLS HEAP CONSUMPTION] Used: "));
+    Serial.print((heapBeforeHandshake > heapAfterHandshake) ? (heapBeforeHandshake - heapAfterHandshake) : 0);
+    Serial.print(F(" bytes | Remaining Free: "));
+    Serial.print(heapAfterHandshake);
+    Serial.println(F(" bytes"));
+    sslDiagClient.stop();
+  } else {
+    Serial.print(F("[TLS FAILURE] TLS connection failed after "));
+    Serial.print(tlsElapsed);
+    Serial.println(F(" ms."));
+
+    char sslErrBuf[256] = {0};
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 3)
+    int sslErrCode = sslDiagClient.lastError(sslErrBuf, sizeof(sslErrBuf));
+#else
+    int sslErrCode = sslDiagClient.lastSSLError(sslErrBuf, sizeof(sslErrBuf));
+#endif
+
+    Serial.print(F("[TLS ERROR CODE] Error: "));
+    Serial.print(sslErrCode);
+    Serial.print(F(" | Description: "));
+    Serial.println(sslErrBuf[0] ? sslErrBuf : "Unknown TLS handshake error");
+    Serial.print(F("[TLS HEAP DIAGNOSTIC] Free Heap: "));
+    Serial.print(heapBeforeHandshake);
+    Serial.println(F(" bytes (mbedtls requires ~35KB contiguous free heap for TLS session)"));
+    Serial.println(F("=================================================="));
+    return false;
+  }
+
+  // 6. Endpoint URL Construction & HTTPClient begin() Diagnostic
+  Serial.println(F("\n--- 6. Endpoint URL Construction & HTTPClient Initialization ---"));
+  String testEndpoint = String(SUPABASE_GATEWAY_URL) + "?action=poll_commands";
+  Serial.print(F("Base URL             : ")); Serial.println(SUPABASE_BASE_URL);
+  Serial.print(F("Gateway URL          : ")); Serial.println(SUPABASE_GATEWAY_URL);
+  Serial.print(F("Test Endpoint URL    : ")); Serial.println(testEndpoint);
+
+  WiFiClientSecure httpTestClient;
+  configureTlsClient(httpTestClient);
+  HTTPClient testHttps;
+  bool beginSuccess = testHttps.begin(httpTestClient, testEndpoint);
+  if (beginSuccess) {
+    Serial.println(F("[HTTP BEGIN SUCCESS] HTTPClient::begin() successfully parsed endpoint URL and bound TLS client."));
+    testHttps.end();
+  } else {
+    Serial.println(F("[HTTP BEGIN FAILURE] HTTPClient::begin() failed to initialize with test endpoint URL!"));
+    Serial.println(F("=================================================="));
+    return false;
+  }
+
+  Serial.println(F("\n[DIAGNOSTIC COMPLETE] All HTTPS prerequisites passed: DNS, TCP:443, TLS, and HTTPClient initialization verified."));
+  Serial.println(F("=================================================="));
+  return true;
+}
+
+// ==============================================================================
 // Send Sensor Readings to Supabase Secure Gateway
 // ==============================================================================
 void sendTelemetryToSupabase() {
   if (WiFi.status() != WL_CONNECTED) return;
 
   WiFiClientSecure client;
-  client.setInsecure(); // Uses TLS port 443 with self-validated certificate
+  configureTlsClient(client);
 
   HTTPClient https;
   String endpoint = String(SUPABASE_GATEWAY_URL) + "?action=telemetry";
 
-  if (https.begin(client, endpoint)) {
-    https.addHeader("Content-Type", "application/json");
-    https.addHeader("x-device-token", ESP32_DEVICE_TOKEN);
-    https.addHeader("apikey", SUPABASE_ANON_KEY);
-    https.setTimeout(3500);
+  if (!https.begin(client, endpoint)) {
+    Serial.print(F("[TELEMETRY ERROR] HTTPClient::begin() failed for endpoint: "));
+    Serial.println(endpoint);
+    return;
+  }
+
+  https.addHeader("Content-Type", "application/json");
+  https.addHeader("x-device-token", ESP32_DEVICE_TOKEN);
+  https.addHeader("apikey", SUPABASE_ANON_KEY);
+  https.setTimeout(3500);
 
     StaticJsonDocument<768> doc;
 
@@ -746,6 +1167,8 @@ void sendTelemetryToSupabase() {
     doc["lockout_active"]             = isGasLockoutActive;
     doc["main_contactor_tripped"]      = isMainContactorTripped;
     doc["gas_cleared_pending_reset"]  = gasClearedPendingReset;
+    doc["recovery_stable"]            = isRecoveryStable;
+    doc["warmup_complete"]            = (millis() >= MQ2_WARMUP_PERIOD_MS);
     doc["sensor_fault"]               = isSensorFaultActive;
     doc["dht_fault"]                  = !dhtValid;
     doc["ina219_fault"]               = !ina219Valid;
@@ -761,11 +1184,25 @@ void sendTelemetryToSupabase() {
 
     int httpResponseCode = https.POST(jsonPayload);
     if (httpResponseCode == 200) {
+      consecutiveHttpFailures = 0;
       Serial.println(F("[TELEMETRY] Ground-truth sensor data successfully ingested by Supabase."));
     } else {
+      consecutiveHttpFailures++;
       Serial.print(F("[TELEMETRY ERROR] HTTP Status: "));
-      Serial.println(httpResponseCode);
-      if (httpResponseCode > 0) {
+      Serial.print(httpResponseCode);
+      if (httpResponseCode < 0) {
+        Serial.print(F(" ("));
+        Serial.print(https.errorToString(httpResponseCode));
+        Serial.print(F(")"));
+      }
+      Serial.println();
+      if (httpResponseCode < 0) {
+        Serial.print(F("[TELEMETRY DIAGNOSTIC] Outbound TLS failed. Target: "));
+        Serial.print(SUPABASE_HOST);
+        Serial.print(F(":443 | Free Heap: "));
+        Serial.print(ESP.getFreeHeap());
+        Serial.println(F(" B"));
+      } else {
         String errResp = https.getString();
         if (errResp.length() > 0) {
           Serial.print(F("[TELEMETRY ERROR BODY] "));
@@ -774,7 +1211,6 @@ void sendTelemetryToSupabase() {
       }
     }
     https.end();
-  }
 }
 
 // ==============================================================================
@@ -784,21 +1220,27 @@ void pollPendingCommandsFromSupabase() {
   if (WiFi.status() != WL_CONNECTED) return;
 
   WiFiClientSecure client;
-  client.setInsecure();
+  configureTlsClient(client);
 
   HTTPClient https;
   String endpoint = String(SUPABASE_GATEWAY_URL) + "?action=poll_commands";
 
-  if (https.begin(client, endpoint)) {
-    https.addHeader("x-device-token", ESP32_DEVICE_TOKEN);
-    https.addHeader("apikey", SUPABASE_ANON_KEY);
-    https.setTimeout(3000);
+  if (!https.begin(client, endpoint)) {
+    Serial.print(F("[POLL ERROR] HTTPClient::begin() failed for endpoint: "));
+    Serial.println(endpoint);
+    return;
+  }
 
-    int httpCode = https.GET();
-    if (httpCode == 200) {
-      String response = https.getString();
-      DynamicJsonDocument doc(2048);
-      DeserializationError error = deserializeJson(doc, response);
+  https.addHeader("x-device-token", ESP32_DEVICE_TOKEN);
+  https.addHeader("apikey", SUPABASE_ANON_KEY);
+  https.setTimeout(3000);
+
+  int httpCode = https.GET();
+  if (httpCode == 200) {
+    consecutiveHttpFailures = 0;
+    String response = https.getString();
+    DynamicJsonDocument doc(2048);
+    DeserializationError error = deserializeJson(doc, response);
 
       if (!error) {
         JsonArray commands = doc["commands"].as<JsonArray>();
@@ -813,29 +1255,109 @@ void pollPendingCommandsFromSupabase() {
 
           // Handle remote safety reset command from verified dashboard operator
           if (strcmp(action, "RESET_SAFETY_LOCKOUT") == 0) {
-            if (lastRawAdc < MQ2_ADC_CLEAR_THRESHOLD && !isSensorFaultActive && gasStatus != "warming_up") {
-              isGasLockoutActive = false;
-              gasClearedPendingReset = false;
-              isMainContactorTripped = false;
-              digitalWrite(PIN_BUZZER, LOW);
-              buzzerToneState = false;
+            unsigned long now = millis();
+            unsigned long elapsedSafeRecoveryMs = (safeReadingsStartMillis > 0) ? (now - safeReadingsStartMillis) : 0;
+            
+            bool vWarmup   = (now >= MQ2_WARMUP_PERIOD_MS);
+            bool vFault    = (!isSensorFaultActive && lastRawAdc >= MQ2_ADC_FAULT_THRESHOLD);
+            bool vAdcClear = (lastRawAdc < MQ2_ADC_CLEAR_THRESHOLD);
+            bool vRecovery = isRecoveryStable;
+            bool vFinalDecision = (vWarmup && vFault && vAdcClear && vRecovery);
 
-              // CRITICAL: Relays REMAIN OFF after reset. Never automatically energize relays!
-              digitalWrite(PIN_RELAY_LIGHT, RELAY_OFF);
-              digitalWrite(PIN_RELAY_FAN, RELAY_OFF);
-              digitalWrite(PIN_RELAY_MOTOR, RELAY_OFF);
-              digitalWrite(PIN_RELAY_EXHAUST, RELAY_OFF);
-              stateLight = false;
-              stateFan = false;
-              stateMotor = false;
-              stateExhaust = false;
+            Serial.println();
+            Serial.println(F("=================================================="));
+            Serial.println(F("   [RESET_SAFETY_LOCKOUT VALIDATION AUDIT]"));
+            Serial.print(F("   Command ID             : ")); Serial.println(commandId);
+            Serial.print(F("   Target Device ID       : ")); Serial.println(deviceId ? deviceId : "N/A");
+            Serial.print(F("   Current Raw ADC        : ")); Serial.println(lastRawAdc);
+            Serial.print(F("   Elapsed Safe Recovery  : ")); Serial.print(elapsedSafeRecoveryMs); Serial.println(F(" ms"));
+            Serial.println(F("   -----------------------------------------------"));
+            Serial.print(F("   - Warm-up validation   : ")); 
+            Serial.print(vWarmup ? F("PASS") : F("FAIL"));
+            Serial.print(F(" (Uptime: ")); Serial.print(now); Serial.print(F(" ms, Required: ")); Serial.print(MQ2_WARMUP_PERIOD_MS); Serial.println(F(" ms)"));
 
-              Serial.println(F("[SAFETY RESET] Remote reset command confirmed. Normal state restored. Relays remain OFF."));
-              ackCommandToSupabase(commandId, deviceId, "acknowledged", false, nullptr, 10);
-            } else {
-              Serial.println(F("[SAFETY RESET REJECTED] Remote reset rejected: Gas level unsafe or sensor fault active!"));
-              ackCommandToSupabase(commandId, deviceId, "rejected_gas_safety", false, "Gas level unsafe or sensor fault active for reset", 10);
+            Serial.print(F("   - Sensor fault valid.  : ")); 
+            Serial.print(vFault ? F("PASS") : F("FAIL"));
+            Serial.print(F(" (FaultActive: ")); Serial.print(isSensorFaultActive ? F("YES") : F("NO")); Serial.print(F(", ADC: ")); Serial.print(lastRawAdc); Serial.println(F(", Min: 45)"));
+
+            Serial.print(F("   - ADC clearance valid. : ")); 
+            Serial.print(vAdcClear ? F("PASS") : F("FAIL"));
+            Serial.print(F(" (ADC: ")); Serial.print(lastRawAdc); Serial.print(F(", Clearance Threshold: < ")); Serial.print(MQ2_ADC_CLEAR_THRESHOLD); Serial.println(F(")"));
+
+            Serial.print(F("   - Stable recovery valid: ")); 
+            Serial.print(vRecovery ? F("PASS") : F("FAIL"));
+            Serial.print(F(" (Stable: ")); Serial.print(isRecoveryStable ? F("YES") : F("NO")); Serial.print(F(", Elapsed: ")); Serial.print(elapsedSafeRecoveryMs); Serial.print(F(" ms, Required: ")); Serial.print(MQ2_RECOVERY_STABLE_PERIOD_MS); Serial.println(F(" ms)"));
+
+            Serial.println(F("   -----------------------------------------------"));
+            Serial.print(F("   - Final Reset Decision : "));
+            Serial.println(vFinalDecision ? F("APPROVED (DISARMING LOCKOUT)") : F("REJECTED (LOCKOUT PRESERVED)"));
+            Serial.println(F("=================================================="));
+
+            if (!vWarmup) {
+              Serial.println(F("[SAFETY RESET REJECTED] Warm-up check failed. Sensor heater stabilizing."));
+              int ackCode = ackCommandToSupabase(commandId, deviceId, "rejected_gas_safety", false, "RESET_REJECTED_WARMING_UP: MQ-2 sensor warm-up in progress (< 20s)", 10);
+              Serial.print(F("[RESET_SAFETY_LOCKOUT ACK] Command ID: ")); Serial.print(commandId);
+              Serial.print(F(" | HTTP ACK Response Code: ")); Serial.println(ackCode);
+              continue;
             }
+
+            if (!vFault) {
+              Serial.println(F("[SAFETY RESET REJECTED] Sensor fault check failed. Disconnected wire or ADC < 45."));
+              int ackCode = ackCommandToSupabase(commandId, deviceId, "rejected_gas_safety", false, "RESET_REJECTED_SENSOR_FAULT: MQ-2 sensor disconnected or ADC < 45", 10);
+              Serial.print(F("[RESET_SAFETY_LOCKOUT ACK] Command ID: ")); Serial.print(commandId);
+              Serial.print(F(" | HTTP ACK Response Code: ")); Serial.println(ackCode);
+              continue;
+            }
+
+            if (!vAdcClear) {
+              Serial.print(F("[SAFETY RESET REJECTED] ADC clearance check failed. Gas level unsafe (ADC: "));
+              Serial.print(lastRawAdc);
+              Serial.println(F(" >= 900)."));
+              int ackCode = ackCommandToSupabase(commandId, deviceId, "rejected_gas_safety", false, "RESET_REJECTED_GAS_UNSAFE: Gas reading at or above clearance threshold (900 ADC)", 10);
+              Serial.print(F("[RESET_SAFETY_LOCKOUT ACK] Command ID: ")); Serial.print(commandId);
+              Serial.print(F(" | HTTP ACK Response Code: ")); Serial.println(ackCode);
+              continue;
+            }
+
+            if (!vRecovery) {
+              Serial.print(F("[SAFETY RESET REJECTED] Stable recovery duration check failed. Elapsed: "));
+              Serial.print(elapsedSafeRecoveryMs);
+              Serial.print(F(" ms < Required: "));
+              Serial.print(MQ2_RECOVERY_STABLE_PERIOD_MS);
+              Serial.println(F(" ms."));
+              int ackCode = ackCommandToSupabase(commandId, deviceId, "rejected_gas_safety", false, "RESET_REJECTED_RECOVERY_INSUFFICIENT: Safe baseline not maintained for continuous recovery duration", 10);
+              Serial.print(F("[RESET_SAFETY_LOCKOUT ACK] Command ID: ")); Serial.print(commandId);
+              Serial.print(F(" | HTTP ACK Response Code: ")); Serial.println(ackCode);
+              continue;
+            }
+
+            // All hardware safety checks passed: Disarm local lockout and re-arm contactor
+            isGasLockoutActive = false;
+            gasClearedPendingReset = false;
+            isMainContactorTripped = false;
+            digitalWrite(PIN_BUZZER, LOW);
+            buzzerToneState = false;
+
+            // CRITICAL: Relays REMAIN OFF after reset. Never automatically energize relays!
+            digitalWrite(PIN_RELAY_LIGHT, RELAY_OFF);
+            digitalWrite(PIN_RELAY_FAN, RELAY_OFF);
+            digitalWrite(PIN_RELAY_MOTOR, RELAY_OFF);
+            digitalWrite(PIN_RELAY_EXHAUST, RELAY_OFF);
+            stateLight = false;
+            stateFan = false;
+            stateMotor = false;
+            stateExhaust = false;
+
+            // Double success chime
+            digitalWrite(PIN_BUZZER, HIGH); delay(80);
+            digitalWrite(PIN_BUZZER, LOW);  delay(60);
+            digitalWrite(PIN_BUZZER, HIGH); delay(120);
+            digitalWrite(PIN_BUZZER, LOW);
+
+            Serial.println(F("[SAFETY RESET APPROVED] ESP32 verified safe atmosphere. Lockout disarmed. Contactor re-armed. Relays remain OFF."));
+            int ackCode = ackCommandToSupabase(commandId, deviceId, "acknowledged", false, "Lockout cleared by authorized safety reset", 10);
+            Serial.print(F("[RESET_SAFETY_LOCKOUT ACK] Command ID: ")); Serial.print(commandId);
+            Serial.print(F(" | HTTP ACK Response Code: ")); Serial.println(ackCode);
             continue;
           }
 
@@ -881,9 +1403,22 @@ void pollPendingCommandsFromSupabase() {
         }
       }
     } else {
+      consecutiveHttpFailures++;
       Serial.print(F("[POLL ERROR] HTTP Status: "));
-      Serial.println(httpCode);
-      if (httpCode > 0) {
+      Serial.print(httpCode);
+      if (httpCode < 0) {
+        Serial.print(F(" ("));
+        Serial.print(https.errorToString(httpCode));
+        Serial.print(F(")"));
+      }
+      Serial.println();
+      if (httpCode < 0) {
+        Serial.print(F("[POLL DIAGNOSTIC] Outbound TLS failed. Target: "));
+        Serial.print(SUPABASE_HOST);
+        Serial.print(F(":443 | Free Heap: "));
+        Serial.print(ESP.getFreeHeap());
+        Serial.println(F(" B"));
+      } else {
         String errResp = https.getString();
         if (errResp.length() > 0) {
           Serial.print(F("[POLL ERROR BODY] "));
@@ -892,59 +1427,77 @@ void pollPendingCommandsFromSupabase() {
       }
     }
     https.end();
-  }
 }
 
 // ==============================================================================
 // Acknowledge Executed Command to Prevent Duplicate Execution
 // ==============================================================================
-void ackCommandToSupabase(const char* commandId, const char* deviceId, const char* status, bool actualState, const char* errMsg, int rttMs) {
-  if (WiFi.status() != WL_CONNECTED) return;
+int ackCommandToSupabase(const char* commandId, const char* deviceId, const char* status, bool actualState, const char* errMsg, int rttMs) {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println(F("[COMMAND ACK] Wi-Fi disconnected. Cannot send ACK."));
+    return -1;
+  }
 
   WiFiClientSecure client;
-  client.setInsecure();
+  configureTlsClient(client);
 
   HTTPClient https;
   String endpoint = String(SUPABASE_GATEWAY_URL) + "?action=ack_command";
 
-  if (https.begin(client, endpoint)) {
-    https.addHeader("Content-Type", "application/json");
-    https.addHeader("x-device-token", ESP32_DEVICE_TOKEN);
-    https.addHeader("apikey", SUPABASE_ANON_KEY);
-    https.setTimeout(3000);
+  int httpCode = -1;
+  if (!https.begin(client, endpoint)) {
+    Serial.print(F("[COMMAND ACK ERROR] HTTPClient::begin() failed for endpoint: "));
+    Serial.println(endpoint);
+    return -1;
+  }
 
-    StaticJsonDocument<256> doc;
-    doc["command_id"]    = commandId;
-    if (deviceId && strlen(deviceId) > 0) {
-      doc["device_id"]   = deviceId;
+  https.addHeader("Content-Type", "application/json");
+  https.addHeader("x-device-token", ESP32_DEVICE_TOKEN);
+  https.addHeader("apikey", SUPABASE_ANON_KEY);
+  https.setTimeout(3000);
+
+  StaticJsonDocument<256> doc;
+  doc["command_id"]    = commandId;
+  if (deviceId && strlen(deviceId) > 0) {
+    doc["device_id"]   = deviceId;
+  }
+  doc["status"]        = status;
+  doc["actual_state"]  = actualState;
+  doc["round_trip_ms"] = rttMs;
+  if (errMsg) doc["error_message"] = errMsg;
+
+  String jsonPayload;
+  serializeJson(doc, jsonPayload);
+
+  httpCode = https.POST(jsonPayload);
+  if (httpCode == 200) {
+    Serial.print(F("[COMMAND ACK] Confirmed command: "));
+    Serial.print(commandId);
+    Serial.print(F(" | Status: "));
+    Serial.print(status);
+    Serial.print(F(" | HTTP ACK Response Code: "));
+    Serial.println(httpCode);
+  } else {
+    Serial.print(F("[COMMAND ACK ERROR] Command: "));
+    Serial.print(commandId);
+    Serial.print(F(" | HTTP Status: "));
+    Serial.print(httpCode);
+    if (httpCode < 0) {
+      Serial.print(F(" ("));
+      Serial.print(https.errorToString(httpCode));
+      Serial.print(F(")"));
     }
-    doc["status"]        = status;
-    doc["actual_state"]  = actualState;
-    doc["round_trip_ms"] = rttMs;
-    if (errMsg) doc["error_message"] = errMsg;
-
-    String jsonPayload;
-    serializeJson(doc, jsonPayload);
-
-    int httpCode = https.POST(jsonPayload);
-    if (httpCode == 200) {
-      Serial.print(F("[COMMAND ACK] Confirmed command "));
-      Serial.print(commandId);
-      Serial.print(F(" as "));
-      Serial.println(status);
-    } else {
-      Serial.print(F("[COMMAND ACK ERROR] HTTP Status: "));
-      Serial.println(httpCode);
-      if (httpCode > 0) {
-        String errResp = https.getString();
-        if (errResp.length() > 0) {
-          Serial.print(F("[COMMAND ACK ERROR BODY] "));
-          Serial.println(errResp);
-        }
+    Serial.println();
+    if (httpCode > 0) {
+      String errResp = https.getString();
+      if (errResp.length() > 0) {
+        Serial.print(F("[COMMAND ACK ERROR BODY] "));
+        Serial.println(errResp);
       }
     }
-    https.end();
   }
+  https.end();
+  return httpCode;
 }
 
 // ==============================================================================
@@ -954,30 +1507,41 @@ void sendHeartbeatToSupabase() {
   if (WiFi.status() != WL_CONNECTED) return;
 
   WiFiClientSecure client;
-  client.setInsecure();
+  configureTlsClient(client);
 
   HTTPClient https;
   String endpoint = String(SUPABASE_GATEWAY_URL) + "?action=heartbeat";
 
-  if (https.begin(client, endpoint)) {
-    https.addHeader("x-device-token", ESP32_DEVICE_TOKEN);
-    https.addHeader("apikey", SUPABASE_ANON_KEY);
-    https.setTimeout(2500);
+  if (!https.begin(client, endpoint)) {
+    Serial.print(F("[HEARTBEAT ERROR] HTTPClient::begin() failed for endpoint: "));
+    Serial.println(endpoint);
+    return;
+  }
 
-    int httpCode = https.GET();
-    if (httpCode == 200) {
-      Serial.println(F("[HEARTBEAT] Node status: ONLINE."));
-    } else {
-      Serial.print(F("[HEARTBEAT ERROR] HTTP Status: "));
-      Serial.println(httpCode);
-      if (httpCode > 0) {
-        String errResp = https.getString();
-        if (errResp.length() > 0) {
-          Serial.print(F("[HEARTBEAT ERROR BODY] "));
-          Serial.println(errResp);
-        }
+  https.addHeader("x-device-token", ESP32_DEVICE_TOKEN);
+  https.addHeader("apikey", SUPABASE_ANON_KEY);
+  https.setTimeout(2500);
+
+  int httpCode = https.GET();
+  if (httpCode == 200) {
+    consecutiveHttpFailures = 0;
+    Serial.println(F("[HEARTBEAT] Node status: ONLINE."));
+  } else {
+    Serial.print(F("[HEARTBEAT ERROR] HTTP Status: "));
+    Serial.print(httpCode);
+    if (httpCode < 0) {
+      Serial.print(F(" ("));
+      Serial.print(https.errorToString(httpCode));
+      Serial.print(F(")"));
+    }
+    Serial.println();
+    if (httpCode > 0) {
+      String errResp = https.getString();
+      if (errResp.length() > 0) {
+        Serial.print(F("[HEARTBEAT ERROR BODY] "));
+        Serial.println(errResp);
       }
     }
-    https.end();
   }
+  https.end();
 }

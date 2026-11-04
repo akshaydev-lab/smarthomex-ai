@@ -404,7 +404,7 @@ serve(async (req: Request) => {
       }
 
       // 2. CRITICAL GAS LEAKAGE HANDLING & LOCKOUT ENFORCEMENT
-      if (sanitizedGasStatus === 'danger' || lockout_active === true) {
+      if (sanitizedGasStatus === 'danger') {
         // Enforce all appliance relays to OFF state in database
         await supabase
           .from('devices')
@@ -470,7 +470,18 @@ serve(async (req: Request) => {
             }
           );
         }
-      } else if (gas_cleared_pending_reset === true) {
+      } else if (lockout_active === true || gas_cleared_pending_reset === true) {
+        // Enforce all appliance relays to OFF state in database
+        await supabase
+          .from('devices')
+          .update({
+            state: false,
+            power_watts: 0,
+            last_toggled: new Date().toISOString(),
+          })
+          .eq('user_id', authenticatedUserId)
+          .eq('home_id', authenticatedHomeId);
+
         // Gas dropped below danger threshold, but lockout remains active until reset
         await supabase
           .from('alerts')
@@ -571,8 +582,9 @@ serve(async (req: Request) => {
       for (const cmd of (commands || [])) {
         const actionUpper = (cmd.action || '').toUpperCase().trim();
         const isSafeDeEnergizing = ['OFF', '0', 'FALSE', 'STOP', 'DISABLE', 'EMERGENCY_STOP'].includes(actionUpper);
+        const isResetCommand = actionUpper === 'RESET_SAFETY_LOCKOUT';
 
-        if (isGasEmergencyActive && !isSafeDeEnergizing) {
+        if (isGasEmergencyActive && !isSafeDeEnergizing && !isResetCommand) {
           // Auto-reject stale or pending energizing commands during active gas emergency
           console.warn(`[GATEWAY INTERLOCK] Auto-rejecting pending command ${cmd.id} (${cmd.action}) due to active gas hazard`);
           await supabase
@@ -733,7 +745,44 @@ serve(async (req: Request) => {
         .eq('id', command_id)
         .eq('user_id', authenticatedUserId);
 
-      if (resolvedStatus === 'acknowledged') {
+      // Handle RESET_SAFETY_LOCKOUT command acknowledgement from ESP32
+      if (commandRecord.action === 'RESET_SAFETY_LOCKOUT') {
+        if (resolvedStatus === 'acknowledged') {
+          const resolvedAt = new Date().toISOString();
+          console.log(`[RESET CONFIRMED BY HARDWARE] ESP32 confirmed safety reset for user ${authenticatedUserId}. Resolving gas alerts...`);
+          
+          await supabase
+            .from('alerts')
+            .update({
+              acknowledged: true,
+              resolved_at: resolvedAt,
+              emergency_status: 'RESOLVED',
+            })
+            .eq('user_id', authenticatedUserId)
+            .eq('type', 'gas_leak')
+            .is('resolved_at', null)
+            .or('is_demo.is.null,is_demo.eq.false');
+
+          // Log verified recovery alert
+          await supabase.from('alerts').insert({
+            home_id: authenticatedHomeId,
+            user_id: authenticatedUserId,
+            type: 'system_recovery',
+            category: 'recovery',
+            severity: 'info',
+            emergency_status: 'RESOLVED',
+            title: 'Safety Reset Confirmed by Hardware – Normal Operation Restored',
+            description: 'ESP32 hardware node independently verified stable clean atmosphere, disarmed local safety lockout, and re-armed main contactor. Relays remain safely OFF.',
+            acknowledged: true,
+            resolved_at: resolvedAt,
+            is_demo: false,
+            source: 'ESP32 Hardware Verification',
+          });
+        } else {
+          console.warn(`[RESET REJECTED BY HARDWARE] ESP32 rejected reset for command ${command_id}: ${error_message || 'Hardware safety check failed'}`);
+          // Lockout remains ACTIVE in database; alerts remain UNRESOLVED.
+        }
+      } else if (resolvedStatus === 'acknowledged') {
         const targetState = actual_state !== undefined
           ? Boolean(actual_state)
           : commandRecord.action === 'ON';
@@ -1038,50 +1087,218 @@ serve(async (req: Request) => {
         );
       }
 
-      // 5. ALL VERIFICATIONS PASSED: Disarm Lockout & Resolve Alerts Server-Side
-      const resolvedAt = new Date().toISOString();
+      // 5. Verification Passed: Differentiate Physical Button vs Remote Dashboard Reset
+      if (resetSource === 'physical_button_gpio0') {
+        // Physical Button on GPIO 0 was pressed: ESP32 hardware already verified clean air locally
+        // and cleared local lockout variables prior to reporting this event.
+        const resolvedAt = new Date().toISOString();
 
-      const { error: resolveErr } = await supabase
-        .from('alerts')
-        .update({
+        const { error: resolveErr } = await supabase
+          .from('alerts')
+          .update({
+            acknowledged: true,
+            resolved_at: resolvedAt,
+            emergency_status: 'RESOLVED',
+          })
+          .eq('user_id', authenticatedUserId)
+          .eq('home_id', authenticatedHomeId)
+          .eq('type', 'gas_leak')
+          .is('resolved_at', null)
+          .or('is_demo.is.null,is_demo.eq.false');
+
+        if (resolveErr) {
+          console.error(`[SAFETY RESET ERROR] Failed to resolve gas alerts:`, resolveErr.message);
+        }
+
+        // Log recovery alert in database
+        await supabase.from('alerts').insert({
+          home_id: authenticatedHomeId,
+          user_id: authenticatedUserId,
+          type: 'system_recovery',
+          category: 'recovery',
+          severity: 'info',
+          emergency_status: 'RESOLVED',
+          title: 'Physical Safety Reset Completed – Normal Operation Restored',
+          description: `Atmosphere independently verified safe (< 900 ADC, latest reading: ${currentAdc} ADC). System lockout disarmed and main contactor restored via physical button on GPIO 0. Relays remain OFF until commanded.`,
           acknowledged: true,
           resolved_at: resolvedAt,
-          emergency_status: 'RESOLVED',
-        })
-        .eq('user_id', authenticatedUserId)
-        .eq('home_id', authenticatedHomeId)
-        .eq('type', 'gas_leak')
-        .is('resolved_at', null)
-        .or('is_demo.is.null,is_demo.eq.false');
+          is_demo: false,
+          source: resetSource,
+        });
 
-      if (resolveErr) {
-        console.error(`[SAFETY RESET ERROR] Failed to resolve gas alerts:`, resolveErr.message);
+        console.log(`[SAFETY RESET APPROVED] Completed for user ${authenticatedUserId} via ${resetSource} (Verified ADC: ${currentAdc})`);
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            status: 'LOCKOUT_CLEARED',
+            message: 'Physical safety reset confirmed by hardware. System emergency lockout disarmed.',
+            resolved_at: resolvedAt,
+            verified_raw_adc: currentAdc,
+          }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
 
-      // Log recovery alert in database
-      await supabase.from('alerts').insert({
-        home_id: authenticatedHomeId,
-        user_id: authenticatedUserId,
-        type: 'system_recovery',
-        category: 'recovery',
-        severity: 'info',
-        emergency_status: 'RESOLVED',
-        title: 'Safety Reset Completed – Normal Operation Restored',
-        description: `Atmosphere independently verified safe (< 900 ADC, latest reading: ${currentAdc} ADC). System lockout disarmed and main contactor restored via authorized safety reset (${resetSource}). Relays remain OFF until commanded.`,
-        acknowledged: true,
-        resolved_at: resolvedAt,
-        is_demo: false,
-        source: resetSource,
-      });
+      // Remote / Dashboard Reset Request:
+      // DO NOT resolve alerts directly! Follow the Secure Reset Workflow:
+      // Create a dedicated RESET_SAFETY_LOCKOUT command in device_commands, dispatch to ESP32,
+      // and resolve the emergency ONLY after receiving hardware acknowledgement!
+      
+      // Check if an active unresolved real gas hazard exists
+      const { data: activeGasHazards } = await supabase
+        .from('alerts')
+        .select('id, emergency_status')
+        .eq('user_id', authenticatedUserId)
+        .eq('type', 'gas_leak')
+        .eq('severity', 'danger')
+        .is('resolved_at', null)
+        .or('is_demo.is.null,is_demo.eq.false')
+        .limit(5);
 
-      console.log(`[SAFETY RESET APPROVED] Completed for user ${authenticatedUserId} via ${resetSource} (Verified ADC: ${currentAdc})`);
+      const hasActiveHazard = Boolean(
+        activeGasHazards?.some(
+          a => a.emergency_status !== 'RESOLVED' && a.emergency_status !== 'NORMAL'
+        )
+      );
+
+      if (!hasActiveHazard) {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            status: 'LOCKOUT_CLEARED',
+            message: 'No active gas hazard or lockout pending reset.',
+            verified_raw_adc: currentAdc,
+          }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Idempotency Guard: Prevent duplicate pending reset commands
+      const { data: existingCmd } = await supabase
+        .from('device_commands')
+        .select('id, status, created_at')
+        .eq('user_id', authenticatedUserId)
+        .eq('action', 'RESET_SAFETY_LOCKOUT')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (existingCmd) {
+        console.log(`[SAFETY RESET IDEMPOTENT] Existing pending reset command found: ${existingCmd.id}`);
+        return new Response(
+          JSON.stringify({
+            success: true,
+            status: 'WAITING_FOR_ESP32',
+            command_id: existingCmd.id,
+            message: 'Reset request is already queued. Awaiting ESP32 hardware safety verification.',
+            verified_raw_adc: currentAdc,
+          }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Find user's target device to attach the command
+      const { data: targetDevice, error: devErr } = await supabase
+        .from('devices')
+        .select('id')
+        .eq('user_id', authenticatedUserId)
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (devErr || !targetDevice) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: 'SAFETY_RESET_REJECTED: No target device registered for user account.',
+          }),
+          { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Queue dedicated RESET_SAFETY_LOCKOUT command in device_commands
+      const { data: newCmd, error: insertErr } = await supabase
+        .from('device_commands')
+        .insert({
+          device_id: targetDevice.id,
+          user_id: authenticatedUserId,
+          action: 'RESET_SAFETY_LOCKOUT',
+          status: 'pending',
+          source: 'safety_override',
+          nonce: crypto.randomUUID(),
+          payload: {
+            source: resetSource,
+            operator: body.operator || 'Authorized Operator',
+            requested_at: new Date().toISOString(),
+            verified_adc: currentAdc,
+          },
+        })
+        .select('id, created_at')
+        .single();
+
+      if (insertErr || !newCmd) {
+        console.error('[SAFETY RESET ERROR] Failed to insert reset command:', insertErr?.message);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: `Failed to queue safety reset command: ${insertErr?.message || 'Database error'}`,
+          }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      console.log(`[SAFETY RESET QUEUED] Dispatched RESET_SAFETY_LOCKOUT command ${newCmd.id} for ESP32 verification.`);
 
       return new Response(
         JSON.stringify({
           success: true,
-          message: 'System emergency lockout disarmed and normal operation restored',
-          resolved_at: resolvedAt,
+          status: 'RESET_REQUESTED',
+          command_id: newCmd.id,
+          message: 'Reset command dispatched to ESP32. Awaiting independent hardware safety verification.',
           verified_raw_adc: currentAdc,
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // =========================================================================
+    // ROUTE 4b: Check Reset Command Status (For Polling Reset Progression)
+    // =========================================================================
+    if (action === 'check_reset_status') {
+      const url = new URL(req.url);
+      const commandId = url.searchParams.get('command_id');
+      if (!commandId) {
+        return new Response(
+          JSON.stringify({ error: 'Missing command_id query parameter' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const { data: cmdRecord, error: cmdErr } = await supabase
+        .from('device_commands')
+        .select('id, action, status, error_message, acknowledged_at, created_at')
+        .eq('id', commandId)
+        .eq('user_id', authenticatedUserId)
+        .maybeSingle();
+
+      if (cmdErr || !cmdRecord) {
+        return new Response(
+          JSON.stringify({ error: 'Command not found' }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          command_id: cmdRecord.id,
+          action: cmdRecord.action,
+          status: cmdRecord.status,
+          error_message: cmdRecord.error_message,
+          acknowledged_at: cmdRecord.acknowledged_at,
+          created_at: cmdRecord.created_at,
         }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
