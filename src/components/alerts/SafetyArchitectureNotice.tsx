@@ -4,7 +4,7 @@ import { Card } from '../common/Card';
 
 export const SafetyArchitectureNotice: React.FC = () => {
   return (
-    <Card className="border-rose-500/30 bg-gradient-to-br from-rose-950/20 via-slate-900/90 to-slate-950">
+    <Card className="border-rose-500/30 bg-gradient-to-br from-rose-950/20 via-[#141C23] to-[#0B0F12]">
       <div className="flex items-start gap-3.5">
         <div className="p-2.5 rounded-2xl bg-rose-500/20 border border-rose-500/40 text-rose-300 shrink-0">
           <ShieldCheck className="h-6 w-6" />
@@ -26,7 +26,7 @@ export const SafetyArchitectureNotice: React.FC = () => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-slate-300">
-            <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800">
+            <div className="p-3 rounded-xl bg-[#0B0F12]/80 border border-white/[0.06]">
               <span className="font-semibold text-rose-400 flex items-center gap-1.5 mb-1">
                 <ZapOff className="h-4 w-4" /> Relay Spark Prevention
               </span>
@@ -35,8 +35,8 @@ export const SafetyArchitectureNotice: React.FC = () => {
               </span>
             </div>
 
-            <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800">
-              <span className="font-semibold text-teal-400 flex items-center gap-1.5 mb-1">
+            <div className="p-3 rounded-xl bg-[#0B0F12]/80 border border-white/[0.06]">
+              <span className="font-semibold text-emerald-400 flex items-center gap-1.5 mb-1">
                 <Cpu className="h-4 w-4" /> Local RTOS Siren
               </span>
               <span>
@@ -44,8 +44,8 @@ export const SafetyArchitectureNotice: React.FC = () => {
               </span>
             </div>
 
-            <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800">
-              <span className="font-semibold text-cyan-400 flex items-center gap-1.5 mb-1">
+            <div className="p-3 rounded-xl bg-[#0B0F12]/80 border border-white/[0.06]">
+              <span className="font-semibold text-emerald-300 flex items-center gap-1.5 mb-1">
                 <CheckCircle2 className="h-4 w-4" /> Certified Safety Systems
               </span>
               <span>

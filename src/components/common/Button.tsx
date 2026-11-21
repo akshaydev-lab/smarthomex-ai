@@ -20,7 +20,7 @@ export const Button: React.FC<ButtonProps> = ({
   disabled,
   ...props
 }) => {
-  const baseStyles = 'relative inline-flex items-center justify-center font-medium rounded-xl transition-all duration-200 select-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-cyan-500/50 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none active:scale-[0.98]';
+  const baseStyles = 'relative inline-flex items-center justify-center font-medium rounded-xl transition-all duration-200 select-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none active:scale-[0.98]';
 
   const sizeStyles = {
     sm: 'text-xs px-3 py-1.5 gap-1.5',
@@ -29,12 +29,12 @@ export const Button: React.FC<ButtonProps> = ({
   };
 
   const variantStyles = {
-    primary: 'bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-400 hover:to-teal-400 text-slate-950 font-semibold shadow-glow-cyan hover:shadow-cyan-500/50 border border-cyan-300/30',
-    secondary: 'bg-slate-800/80 hover:bg-slate-700/80 text-slate-200 border border-slate-700/80 hover:border-slate-600',
-    outline: 'border border-cyan-500/40 text-cyan-400 hover:bg-cyan-500/10 hover:border-cyan-400',
-    danger: 'bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white font-semibold shadow-glow-danger border border-rose-400/30',
-    ghost: 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/50',
-    glass: 'glass-panel hover:bg-slate-800/60 text-slate-200 border-cyan-500/20 hover:border-cyan-500/40',
+    primary: 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold shadow-glow-emerald hover:shadow-emerald-500/40 border border-emerald-400/40',
+    secondary: 'bg-[#111820] hover:bg-[#1A242E] text-slate-200 border border-white/[0.08] hover:border-emerald-500/35',
+    outline: 'border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 hover:border-emerald-400',
+    danger: 'bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-bold shadow-glow-danger border border-red-500/40',
+    ghost: 'text-slate-400 hover:text-emerald-300 hover:bg-[#141C23]',
+    glass: 'glass-panel hover:bg-[#1A242E] text-slate-200 border-white/[0.08] hover:border-emerald-500/35',
   };
 
   return (

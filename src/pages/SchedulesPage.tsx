@@ -70,12 +70,12 @@ export const SchedulesPage: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Top Banner Toolbar */}
-      <Card className="p-4 sm:p-5 border-cyan-500/20 bg-gradient-to-r from-slate-900 via-slate-950 to-slate-900">
+      <Card className="p-4 sm:p-5 border-emerald-500/25 bg-gradient-to-r from-[#141C23] via-[#111820] to-[#141C23] shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="h-12 w-12 rounded-2xl bg-gradient-to-tr from-cyan-500 to-teal-400 p-0.5 shadow-glow-cyan shrink-0">
-              <div className="h-full w-full bg-slate-950 rounded-[14px] flex items-center justify-center">
-                <CalendarClock className="h-6 w-6 text-cyan-400" />
+            <div className="h-12 w-12 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 p-0.5 shadow-glow-emerald shrink-0">
+              <div className="h-full w-full bg-[#0B0F12] rounded-[14px] flex items-center justify-center">
+                <CalendarClock className="h-6 w-6 text-emerald-400" />
               </div>
             </div>
             <div>
@@ -83,7 +83,7 @@ export const SchedulesPage: React.FC = () => {
                 <h2 className="text-base sm:text-lg font-bold text-slate-100">
                   Device Scheduling & Autonomous Timers
                 </h2>
-                <Badge variant="demo" size="sm">IST Sandbox</Badge>
+                <Badge variant="emerald" size="sm">IST Sandbox</Badge>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
                 Automated ON/OFF schedules for Light, Fan, Water Booster Motor & Kitchen Exhaust Fan
@@ -104,16 +104,16 @@ export const SchedulesPage: React.FC = () => {
 
       {/* KPI Highlights Bar */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
-        <Card className="p-3.5">
+        <Card className="p-3.5 bg-[#141C23]/90 border-white/[0.08]">
           <span className="text-[11px] font-mono text-slate-400 block mb-1">Total Schedules</span>
           <div className="flex items-baseline gap-1.5">
             <span className="text-2xl font-bold font-mono text-slate-100">{schedules.length}</span>
             <span className="text-xs text-slate-400 font-mono">Tasks</span>
           </div>
-          <span className="text-[10px] text-cyan-400 font-mono mt-1 block">4-Channel Relays</span>
+          <span className="text-[10px] text-emerald-400 font-mono mt-1 block">4-Channel Relays</span>
         </Card>
 
-        <Card className="p-3.5">
+        <Card className="p-3.5 bg-[#141C23]/90 border-white/[0.08]">
           <span className="text-[11px] font-mono text-slate-400 block mb-1">Active Automated</span>
           <div className="flex items-baseline gap-1.5">
             <span className="text-2xl font-bold font-mono text-emerald-400">{activeCount}</span>
@@ -122,15 +122,15 @@ export const SchedulesPage: React.FC = () => {
           <span className="text-[10px] text-emerald-400 font-mono mt-1 block">Autonomous Execution</span>
         </Card>
 
-        <Card className="p-3.5">
+        <Card className="p-3.5 bg-[#141C23]/90 border-white/[0.08]">
           <span className="text-[11px] font-mono text-slate-400 block mb-1">Execution Timezone</span>
-          <div className="text-sm font-bold font-mono text-cyan-300 mt-1 flex items-center gap-1">
-            <Globe className="h-3.5 w-3.5 text-cyan-400" /> Asia/Kolkata
+          <div className="text-sm font-bold font-mono text-emerald-300 mt-1 flex items-center gap-1">
+            <Globe className="h-3.5 w-3.5 text-emerald-400" /> Asia/Kolkata
           </div>
           <span className="text-[10px] text-slate-400 font-mono mt-1 block">Indian Standard Time (IST)</span>
         </Card>
 
-        <Card className="p-3.5">
+        <Card className="p-3.5 bg-[#141C23]/90 border-white/[0.08]">
           <span className="text-[11px] font-mono text-slate-400 block mb-1">Idempotency Lock</span>
           <div className="text-sm font-bold font-mono text-teal-300 mt-1 flex items-center gap-1">
             <CheckCircle2 className="h-3.5 w-3.5 text-teal-400" /> Safe Single-Fire
@@ -147,10 +147,10 @@ export const SchedulesPage: React.FC = () => {
       />
 
       {/* Filter and Device Selector Row */}
-      <Card className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <Card className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#141C23]/90 border-white/[0.08]">
         {/* Status Filters */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
-          <SlidersHorizontal className="h-4 w-4 text-cyan-400 shrink-0 mr-1" />
+          <SlidersHorizontal className="h-4 w-4 text-emerald-400 shrink-0 mr-1" />
           {[
             { id: 'all', label: 'All Schedules' },
             { id: 'upcoming', label: 'Upcoming' },
@@ -162,8 +162,8 @@ export const SchedulesPage: React.FC = () => {
               onClick={() => setStatusFilter(f.id as any)}
               className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-all cursor-pointer ${
                 statusFilter === f.id
-                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-bold'
-                  : 'text-slate-400 hover:text-slate-200 bg-slate-900/60 border border-slate-800'
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold shadow-glow-emerald'
+                  : 'text-slate-400 hover:text-slate-200 bg-[#0B0F12]/80 border border-white/[0.08]'
               }`}
             >
               {f.label}
@@ -177,7 +177,7 @@ export const SchedulesPage: React.FC = () => {
           <select
             value={deviceFilter}
             onChange={(e) => setDeviceFilter(e.target.value)}
-            className="glass-input px-3 py-1.5 rounded-xl text-xs text-slate-200 bg-slate-900"
+            className="glass-input px-3 py-1.5 rounded-xl text-xs text-slate-200 bg-[#0B0F12] border-white/[0.08]"
           >
             <option value="all">All Devices (4 Relays)</option>
             {devices.map(d => (

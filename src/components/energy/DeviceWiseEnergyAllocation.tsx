@@ -50,16 +50,16 @@ export const DeviceWiseEnergyAllocation: React.FC = () => {
   });
 
   return (
-    <Card className="p-4 sm:p-5 border-cyan-500/20">
+    <Card className="p-4 sm:p-5 bg-[#141C23]/90 border-white/[0.08]">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-gradient-to-tr from-cyan-500/10 to-teal-400/10 border border-cyan-500/20 text-cyan-400">
+          <div className="p-2.5 rounded-xl bg-gradient-to-tr from-emerald-500/20 to-teal-400/20 border border-emerald-500/30 text-emerald-400">
             <Layers className="h-5 w-5" />
           </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-base font-bold text-slate-100">Device-Wise Energy Analytics & Measurement Architecture</h3>
-              <Badge variant="teal" size="sm">Hardware Isolation</Badge>
+              <Badge variant="emerald" size="sm">Hardware Isolation</Badge>
             </div>
             <p className="text-xs text-slate-400 font-mono mt-0.5">
               Distinguishing aggregate bus measurement vs independent circuit sub-metering
@@ -68,12 +68,12 @@ export const DeviceWiseEnergyAllocation: React.FC = () => {
         </div>
 
         {/* Measurement Mode Selector */}
-        <div className="flex items-center bg-slate-900/80 p-1 rounded-xl border border-slate-800 self-start sm:self-auto">
+        <div className="flex items-center bg-[#0B0F12] p-1 rounded-xl border border-white/[0.08] self-start sm:self-auto">
           <button
             onClick={() => setAllocationMode('apportioned')}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
               allocationMode === 'apportioned'
-                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm font-semibold'
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-glow-emerald font-semibold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -83,7 +83,7 @@ export const DeviceWiseEnergyAllocation: React.FC = () => {
             onClick={() => setAllocationMode('dedicated')}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
               allocationMode === 'dedicated'
-                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm font-semibold'
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-glow-emerald font-semibold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -93,10 +93,10 @@ export const DeviceWiseEnergyAllocation: React.FC = () => {
       </div>
 
       {/* Mandatory Engineering Truth Notice */}
-      <div className="p-3.5 rounded-xl bg-slate-950/80 border border-cyan-500/20 mb-5 flex items-start gap-3">
-        <Info className="h-5 w-5 text-cyan-400 shrink-0 mt-0.5" />
+      <div className="p-3.5 rounded-xl bg-[#0B0F12]/80 border border-emerald-500/20 mb-5 flex items-start gap-3">
+        <Info className="h-5 w-5 text-emerald-400 shrink-0 mt-0.5" />
         <div className="text-xs font-mono text-slate-300 space-y-1">
-          <p className="font-semibold text-cyan-300">
+          <p className="font-semibold text-emerald-300">
             {allocationMode === 'apportioned' 
               ? 'Shared Single-Sensor Architecture In Effect'
               : 'Multi-Channel Hardware Sub-metering Architecture Ready'}

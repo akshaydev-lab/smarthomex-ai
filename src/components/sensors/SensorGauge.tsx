@@ -39,12 +39,19 @@ export const SensorGauge: React.FC<SensorGaugeProps> = ({
   const percentage = Math.min(100, Math.max(0, ((safeCurrent - min) / range) * 100));
 
   const colorMap = {
+    emerald: {
+      bar: 'from-emerald-500 to-teal-400',
+      glow: 'shadow-glow-emerald',
+      text: 'text-emerald-400',
+      border: 'border-emerald-500/30',
+      bg: 'bg-emerald-500/10',
+    },
     cyan: {
-      bar: 'from-cyan-500 to-teal-400',
-      glow: 'shadow-glow-cyan',
-      text: 'text-cyan-400',
-      border: 'border-cyan-500/30',
-      bg: 'bg-cyan-500/10',
+      bar: 'from-emerald-400 to-teal-500',
+      glow: 'shadow-glow-emerald',
+      text: 'text-emerald-300',
+      border: 'border-emerald-500/30',
+      bg: 'bg-emerald-500/10',
     },
     teal: {
       bar: 'from-teal-500 to-emerald-400',
@@ -74,19 +81,12 @@ export const SensorGauge: React.FC<SensorGaugeProps> = ({
       border: 'border-rose-500/30',
       bg: 'bg-rose-500/10',
     },
-    emerald: {
-      bar: 'from-emerald-500 to-teal-400',
-      glow: 'shadow-[0_0_20px_rgba(16,185,129,0.3)]',
-      text: 'text-emerald-400',
-      border: 'border-emerald-500/30',
-      bg: 'bg-emerald-500/10',
-    },
   };
 
   const theme = colorMap[accentColor];
 
   return (
-    <Card className="hover:border-cyan-500/30">
+    <Card className="hover:border-emerald-500/30 bg-[#141C23]/90 border-white/[0.08]">
       {/* Header */}
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-2.5">

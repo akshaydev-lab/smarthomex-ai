@@ -21,16 +21,16 @@ export const MasterControl: React.FC = () => {
   };
 
   return (
-    <div className="glass-panel rounded-2xl p-4 sm:p-5 border border-cyan-500/20 mb-6 bg-gradient-to-r from-slate-900/90 via-slate-950 to-slate-900/90 shadow-glass">
+    <div className="glass-panel rounded-2xl p-4 sm:p-5 border border-white/[0.08] mb-6 bg-[#141C23] shadow-glass">
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         {/* Left: Master Overview */}
         <div className="flex items-center gap-3.5">
-          <div className="h-12 w-12 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-teal-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
+          <div className="h-12 w-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0 shadow-glow-emerald">
             <Cpu className="h-6 w-6" />
           </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-base font-bold text-slate-100">
+              <h2 className="text-base font-bold text-[#F8FAFC]">
                 4-Channel ESP32 Relay Master Controller
               </h2>
               <Badge
@@ -40,26 +40,26 @@ export const MasterControl: React.FC = () => {
                 {hardwareBridge.esp32Connected ? 'ESP32 Connected' : (!import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true') ? 'Demo Emulation' : 'ESP32 Offline'}
               </Badge>
             </div>
-            <p className="text-xs text-slate-400 mt-0.5">
-              4-Channel Active-LOW Relay: Ch 1 Light (GPIO 14), Ch 2 Fan (GPIO 25), Ch 3 Motor (GPIO 26). Channel 4 is Permanently Reserved / Unused.
+            <p className="text-xs text-[#94A3B8] mt-0.5">
+              Active-LOW Relays: Ch 1 Light (GPIO 14), Ch 2 Fan (GPIO 25), Ch 3 Motor (GPIO 26). Channel 4 is Reserved.
             </p>
           </div>
         </div>
 
         {/* Center: Live Load Counter */}
-        <div className="flex items-center gap-4 bg-slate-950/70 py-2 px-4 rounded-xl border border-slate-800">
+        <div className="flex items-center gap-4 bg-[#111820] py-2 px-4 rounded-xl border border-white/[0.08]">
           <div>
-            <span className="text-[11px] font-mono text-slate-400 block">Active Relays</span>
-            <span className="text-sm font-bold font-mono text-cyan-300">
+            <span className="text-[11px] font-mono text-[#64748B] block">Active Relays</span>
+            <span className="text-sm font-bold font-mono text-emerald-300">
               {activeDeviceCount} of {devices.length} ON
             </span>
           </div>
-          <div className="h-8 w-px bg-slate-800" />
+          <div className="h-8 w-px bg-white/[0.08]" />
           <div>
-            <span className="text-[11px] font-mono text-slate-400 block flex items-center gap-1">
+            <span className="text-[11px] font-mono text-[#64748B] block flex items-center gap-1">
               <Zap className="h-3 w-3 text-amber-400" /> Aggregate Load
             </span>
-            <span className="text-sm font-bold font-mono text-slate-100">
+            <span className="text-sm font-bold font-mono text-[#F8FAFC]">
               {telemetry.power != null ? `${formatWatts(telemetry.power)} / ${formatWatts(totalPossibleWatts)}` : `-- W / ${formatWatts(totalPossibleWatts)}`}
             </span>
           </div>
@@ -79,7 +79,7 @@ export const MasterControl: React.FC = () => {
           <Button
             variant="secondary"
             size="sm"
-            leftIcon={<XSquare className="h-4 w-4 text-rose-400" />}
+            leftIcon={<XSquare className="h-4 w-4 text-red-400" />}
             onClick={handleAllOff}
           >
             All Devices OFF
@@ -89,25 +89,30 @@ export const MasterControl: React.FC = () => {
 
       {/* Confirmation Modal for All Devices ON */}
       {confirmModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="glass-panel rounded-2xl max-w-md w-full p-6 border border-amber-500/40 shadow-2xl animate-slide-up">
+        <div className="fixed inset-0 z-50 bg-[#0B0F12]/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="rounded-2xl max-w-md w-full p-6 border border-amber-500/40 shadow-2xl animate-slide-up bg-[#141C23]">
             <div className="flex items-center gap-3 text-amber-400 mb-3">
               <div className="h-10 w-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center">
                 <ShieldAlert className="h-5 w-5" />
               </div>
-              <h3 className="font-bold text-base text-slate-100">Activate All Relays?</h3>
+              <h3 className="font-bold text-base text-[#F8FAFC]">Activate All Relays?</h3>
             </div>
-            <p className="text-xs text-slate-300 mb-4 leading-relaxed">
-              Activating all 3 active user relays engages: 45W Light (GPIO 14), 75W Fan (GPIO 25), and 750W Water Booster Pump (GPIO 26) (~870W total). Channel 4 remains permanently reserved/unused, and the separate Exhaust Fan (GPIO 27) operates under Automatic Control only.
+            <p className="text-xs text-[#94A3B8] mb-4 leading-relaxed">
+              This action will energize all active-LOW controllable relay channels (Light, Fan, and Water Motor) simultaneously. Safety interlocks remain strictly active and will prevent actuation if combustible gas is present.
             </p>
-            <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 mb-5 text-[11px] text-slate-400">
-              <strong>Hardware Action:</strong> Sequenced activation of active channels: Ch 1 (GPIO 14), Ch 2 (GPIO 25), Ch 3 (GPIO 26). Channel 4 is permanently reserved.
-            </div>
-            <div className="flex justify-end gap-3">
-              <Button variant="ghost" size="sm" onClick={() => setConfirmModal(false)}>
+            <div className="flex items-center justify-end gap-2.5">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setConfirmModal(false)}
+              >
                 Cancel
               </Button>
-              <Button variant="primary" size="sm" onClick={handleAllOn}>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleAllOn}
+              >
                 Confirm All ON
               </Button>
             </div>

@@ -57,10 +57,10 @@ export const ScheduleCard: React.FC<ScheduleCardProps> = ({
   const allWeekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
   return (
-    <Card className={`transition-all duration-300 ${
+    <Card className={`transition-all duration-300 bg-[#141C23]/90 border-white/[0.08] hover:border-emerald-500/35 ${
       schedule.enabled 
-        ? 'border-cyan-500/25 bg-gradient-to-br from-slate-900/90 to-slate-950' 
-        : 'border-slate-800/80 bg-slate-950/60 opacity-75'
+        ? 'border-emerald-500/30' 
+        : 'opacity-70'
     }`}>
       {/* Top Header */}
       <div className="flex items-start justify-between gap-3">
@@ -103,8 +103,8 @@ export const ScheduleCard: React.FC<ScheduleCardProps> = ({
           onClick={() => onToggle(schedule.id)}
           className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 transition-colors duration-200 ease-in-out mt-1 ${
             schedule.enabled
-              ? 'bg-cyan-500 border-cyan-400'
-              : 'bg-slate-800 border-slate-700'
+              ? 'bg-emerald-500 border-emerald-400 shadow-glow-emerald'
+              : 'bg-[#1A242E] border-white/10'
           }`}
           role="switch"
           aria-checked={schedule.enabled}
@@ -119,12 +119,12 @@ export const ScheduleCard: React.FC<ScheduleCardProps> = ({
       </div>
 
       {/* Time & Recurrence Info Box */}
-      <div className="mt-4 p-3 rounded-xl bg-slate-950/70 border border-slate-800/80 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+      <div className="mt-4 p-3 rounded-xl bg-[#0B0F12]/80 border border-white/[0.06] grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
         <div>
           <span className="text-[11px] font-mono text-slate-400 block mb-0.5 flex items-center gap-1">
-            <Clock className="h-3 w-3 text-cyan-400" /> Scheduled Time (IST)
+            <Clock className="h-3 w-3 text-emerald-400" /> Scheduled Time (IST)
           </span>
-          <span className="text-base font-extrabold font-mono text-cyan-300">
+          <span className="text-base font-extrabold font-mono text-emerald-300">
             {formatTimeIST(schedule.scheduledTime)}
           </span>
           <span className="text-[10px] font-mono text-slate-400 block mt-0.5">
@@ -162,8 +162,8 @@ export const ScheduleCard: React.FC<ScheduleCardProps> = ({
                 key={day}
                 className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded ${
                   isDayActive
-                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
-                    : 'bg-slate-900/40 text-slate-600 border border-slate-800/40'
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                    : 'bg-[#0B0F12]/40 text-slate-600 border border-white/[0.04]'
                 }`}
               >
                 {day}
@@ -174,9 +174,9 @@ export const ScheduleCard: React.FC<ScheduleCardProps> = ({
       )}
 
       {/* Bottom Action Toolbar */}
-      <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs">
+      <div className="mt-4 pt-3 border-t border-white/[0.06] flex items-center justify-between text-xs">
         <div className="flex items-center gap-1.5 text-[11px] font-mono text-slate-400">
-          <Cpu className="h-3 w-3 text-cyan-400" />
+          <Cpu className="h-3 w-3 text-emerald-400" />
           <span>Relay Ch {device?.relayChannel || 1} (GPIO {device?.gpioPin || 16})</span>
         </div>
 
@@ -184,7 +184,7 @@ export const ScheduleCard: React.FC<ScheduleCardProps> = ({
           {/* Quick Test Run Button */}
           <button
             onClick={() => onExecuteNow(schedule.id)}
-            className="px-2 py-1 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 flex items-center gap-1 font-medium transition-colors cursor-pointer text-[11px]"
+            className="px-2 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1 font-medium transition-colors cursor-pointer text-[11px]"
             title="Execute schedule action now in demo mode"
           >
             <Play className="h-3 w-3" />

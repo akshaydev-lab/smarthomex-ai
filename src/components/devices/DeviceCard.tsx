@@ -72,34 +72,34 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({
 
   const getDeviceIcon = () => {
     if (isUnusedChannel) {
-      return <ShieldX className="h-6 w-6 text-slate-500" />;
+      return <ShieldX className="h-6 w-6 text-[#64748B]" />;
     }
     switch (device.type) {
       case 'light':
-        return <Lightbulb className={`h-6 w-6 ${device.state ? 'text-amber-300 drop-shadow-[0_0_12px_rgba(253,224,71,0.8)]' : 'text-slate-400'}`} />;
+        return <Lightbulb className={`h-6 w-6 ${device.state ? 'text-amber-300 drop-shadow-[0_0_12px_rgba(253,224,71,0.8)]' : 'text-[#64748B]'}`} />;
       case 'fan':
-        return <Fan className={`h-6 w-6 ${device.state ? 'text-cyan-300 animate-spin drop-shadow-[0_0_12px_rgba(34,211,238,0.8)]' : 'text-slate-400'}`} style={{ animationDuration: '2s' }} />;
+        return <Fan className={`h-6 w-6 ${device.state ? 'text-emerald-300 animate-spin drop-shadow-[0_0_12px_rgba(52,211,153,0.8)]' : 'text-[#64748B]'}`} style={{ animationDuration: '2s' }} />;
       case 'motor':
-        return <Droplets className={`h-6 w-6 ${device.state ? 'text-blue-400 animate-pulse drop-shadow-[0_0_12px_rgba(96,165,250,0.8)]' : 'text-slate-400'}`} />;
+        return <Droplets className={`h-6 w-6 ${device.state ? 'text-blue-400 animate-pulse drop-shadow-[0_0_12px_rgba(96,165,250,0.8)]' : 'text-[#64748B]'}`} />;
       case 'exhaust_fan':
-        return <Wind className={`h-6 w-6 ${device.state ? 'text-teal-300 animate-spin drop-shadow-[0_0_12px_rgba(45,212,191,0.8)]' : 'text-slate-400'}`} style={{ animationDuration: '1.2s' }} />;
+        return <Wind className={`h-6 w-6 ${device.state ? 'text-teal-300 animate-spin drop-shadow-[0_0_12px_rgba(45,212,191,0.8)]' : 'text-[#64748B]'}`} style={{ animationDuration: '1.2s' }} />;
       default:
-        return <Power className="h-6 w-6 text-slate-400" />;
+        return <Power className="h-6 w-6 text-[#64748B]" />;
     }
   };
 
   const getDeviceAccentGradient = () => {
-    if (isUnusedChannel) return 'from-slate-950 to-slate-900 border-slate-800/50 opacity-80';
-    if (!device.state) return 'from-slate-900/60 to-slate-950/80 border-slate-800/80';
+    if (isUnusedChannel) return 'bg-[#111820] border-white/[0.06] opacity-75';
+    if (!device.state) return 'bg-[#141C23] border-white/[0.08] hover:border-emerald-500/35';
     switch (device.type) {
       case 'light':
-        return 'from-amber-950/30 via-slate-900/80 to-slate-950 border-amber-500/40 shadow-[0_0_25px_rgba(245,158,11,0.15)]';
+        return 'bg-gradient-to-br from-amber-950/25 via-[#141C23] to-[#111820] border-amber-500/40 shadow-[0_0_20px_rgba(245,158,11,0.15)]';
       case 'fan':
-        return 'from-cyan-950/30 via-slate-900/80 to-slate-950 border-cyan-500/40 shadow-glow-cyan';
+        return 'bg-gradient-to-br from-emerald-950/25 via-[#141C23] to-[#111820] border-emerald-500/40 shadow-glow-emerald';
       case 'motor':
-        return 'from-blue-950/30 via-slate-900/80 to-slate-950 border-blue-500/40 shadow-glow-blue';
+        return 'bg-gradient-to-br from-blue-950/25 via-[#141C23] to-[#111820] border-blue-500/40 shadow-glow-blue';
       case 'exhaust_fan':
-        return 'from-teal-950/30 via-slate-900/80 to-slate-950 border-teal-500/40 shadow-glow-teal';
+        return 'bg-gradient-to-br from-teal-950/25 via-[#141C23] to-[#111820] border-teal-500/40 shadow-[0_0_20px_rgba(20,184,166,0.15)]';
     }
   };
 
@@ -112,27 +112,27 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({
 
   return (
     <>
-      <Card className={`bg-gradient-to-br ${getDeviceAccentGradient()} transition-all duration-300 relative flex flex-col justify-between`}>
+      <Card className={`${getDeviceAccentGradient()} transition-all duration-300 relative flex flex-col justify-between p-5`}>
         <div>
           {/* Top Header: Channel, Icon, Mode Toggle & Switch */}
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className={`h-12 w-12 rounded-2xl flex items-center justify-center border transition-all ${
                 isUnusedChannel
-                  ? 'bg-slate-950 border-slate-800'
+                  ? 'bg-[#0B0F12] border-white/[0.06]'
                   : device.state 
-                  ? 'bg-slate-900/90 border-cyan-500/40' 
-                  : 'bg-slate-900/50 border-slate-800'
+                  ? 'bg-[#111820] border-emerald-500/40' 
+                  : 'bg-[#111820] border-white/[0.08]'
               }`}>
                 {getDeviceIcon()}
               </div>
               <div>
-                <h3 className="font-semibold text-slate-100 text-base flex items-center gap-2">
+                <h3 className="font-semibold text-[#F8FAFC] text-base flex items-center gap-2">
                   {device.name}
                 </h3>
-                <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
+                <div className="flex items-center gap-2 text-xs text-[#94A3B8] mt-0.5">
                   <span className="flex items-center gap-1">
-                    <MapPin className="h-3 w-3 text-cyan-400" />
+                    <MapPin className="h-3 w-3 text-emerald-400" />
                     {device.room}
                   </span>
                   {isExhaustFan && (
@@ -141,8 +141,8 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({
                     </span>
                   )}
                   {isUnusedChannel && (
-                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
-                      Unused Channel 4
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#111820] text-[#64748B] border border-white/[0.06]">
+                      Unused Ch 4
                     </span>
                   )}
                 </div>
@@ -151,7 +151,7 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({
 
             {/* Toggle Switch or Disabled Pill */}
             {isUnusedChannel ? (
-              <span className="text-[11px] font-mono px-2.5 py-1 rounded-full bg-slate-800/80 text-slate-400 border border-slate-700">
+              <span className="text-[11px] font-mono px-2.5 py-1 rounded-full bg-[#111820] text-[#64748B] border border-white/[0.08]">
                 LOCKED / UNUSED
               </span>
             ) : isExhaustFan ? (
@@ -159,7 +159,7 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({
                 <span className={`text-[11px] font-mono font-bold px-2.5 py-1 rounded-full border transition-all ${
                   device.state
                     ? 'bg-teal-500/20 text-teal-300 border-teal-500/40 animate-pulse'
-                    : 'bg-slate-800/80 text-slate-400 border-slate-700'
+                    : 'bg-[#111820] text-[#64748B] border-white/[0.08]'
                 }`}>
                   {device.state ? 'VENTILATING (AUTO)' : 'STANDBY (AUTO)'}
                 </span>
@@ -171,10 +171,10 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({
               <button
                 onClick={() => onToggle(device.id)}
                 disabled={device.pendingCommand}
-                className={`relative inline-flex h-8 w-14 shrink-0 cursor-pointer items-center rounded-full border-2 transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-cyan-500/50 disabled:opacity-60 disabled:cursor-wait ${
+                className={`relative inline-flex h-8 w-14 shrink-0 cursor-pointer items-center rounded-full border-2 transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-emerald-500/50 disabled:opacity-60 disabled:cursor-wait ${
                   device.state
-                    ? 'bg-gradient-to-r from-cyan-500 to-teal-400 border-cyan-300'
-                    : 'bg-slate-800 border-slate-700'
+                    ? 'bg-emerald-500 border-emerald-400 shadow-glow-emerald'
+                    : 'bg-[#111820] border-white/[0.12]'
                 }`}
                 role="switch"
                 aria-checked={device.state}
@@ -186,8 +186,8 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({
                   </span>
                 ) : (
                   <span
-                    className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-slate-950 shadow-lg ring-0 transition duration-200 ease-in-out ${
-                      device.state ? 'translate-x-6.5 bg-slate-950' : 'translate-x-1 bg-slate-400'
+                    className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-[#0B0F12] shadow-lg ring-0 transition duration-200 ease-in-out ${
+                      device.state ? 'translate-x-6.5 bg-[#0B0F12]' : 'translate-x-1 bg-[#64748B]'
                     }`}
                   />
                 )}
@@ -204,8 +204,8 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({
                   title="Click to switch between Manual Control and Scheduled Auto Automation"
                   className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold flex items-center gap-1 border transition-all cursor-pointer ${
                     device.controlMode === 'MANUAL'
-                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 hover:bg-cyan-500/30'
-                      : 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40 hover:bg-indigo-500/30'
+                      ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/35 hover:bg-emerald-500/25'
+                      : 'bg-blue-500/15 text-blue-300 border-blue-500/35 hover:bg-blue-500/25'
                   }`}
                 >
                   <Sliders className="h-3 w-3" />
@@ -224,7 +224,7 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({
                   <ShieldCheck className="h-3 w-3" /> ESP32 Real
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1 text-[10px] text-slate-400 bg-slate-900/60 px-2 py-0.5 rounded-md border border-slate-800">
+                <span className="inline-flex items-center gap-1 text-[10px] text-[#94A3B8] bg-[#111820] px-2 py-0.5 rounded-md border border-white/[0.08]">
                   Hardware Offline
                 </span>
               )}
@@ -232,9 +232,9 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({
               <button
                 onClick={() => setIsHistoryOpen(true)}
                 title="View recent command logs and hardware ACKs"
-                className="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-mono flex items-center gap-1 border border-slate-700 cursor-pointer"
+                className="px-2 py-0.5 rounded-md bg-[#111820] hover:bg-[#1A242E] text-[#94A3B8] hover:text-[#F8FAFC] text-[10px] font-mono flex items-center gap-1 border border-white/[0.08] cursor-pointer"
               >
-                <History className="h-3 w-3 text-cyan-400" /> History
+                <History className="h-3 w-3 text-emerald-400" /> History
               </button>
             </div>
 
@@ -284,7 +284,7 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({
                   {gasSafetyState.exhaustSafetyCertified ? 'CERTIFIED' : 'UNCERTIFIED (SAFE)'}
                 </button>
               </div>
-              <p className="text-[10px] text-slate-300">
+              <p className="text-[10px] text-[#94A3B8]">
                 {gasSafetyState.exhaustSafetyCertified
                   ? 'ATEX/IECEx explosion-proof certified. Automatic gas emergency ventilation permitted.'
                   : 'Uncertified fan: Auto-activation strictly disabled during gas emergency to prevent relay/brush electrical spark ignition.'}
@@ -294,7 +294,7 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({
 
           {/* Unused Channel 4 Hardware Notice */}
           {isUnusedChannel && (
-            <div className="mt-2.5 p-2 rounded-xl bg-slate-900/80 border border-slate-800 text-[11px] text-slate-400">
+            <div className="mt-2.5 p-2 rounded-xl bg-[#111820] border border-white/[0.08] text-[11px] text-[#94A3B8]">
               Channel 4 of the 4-channel Active-LOW relay module is permanently reserved as unused per hardware specification.
             </div>
           )}
@@ -317,16 +317,16 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({
 
           {/* Next Scheduled Action Display */}
           {!isUnusedChannel && (
-            <div className="mt-2.5 px-2.5 py-1.5 rounded-xl bg-slate-950/60 border border-slate-800/80 text-[11px] flex items-center gap-2">
-              <Calendar className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+            <div className="mt-2.5 px-2.5 py-1.5 rounded-xl bg-[#111820] border border-white/[0.08] text-[11px] flex items-center gap-2">
+              <Calendar className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
               <div className="truncate flex-1">
                 {device.nextScheduledAction ? (
                   <span className="text-slate-300">
                     Next: <strong className={device.nextScheduledAction.action === 'ON' ? 'text-emerald-400' : 'text-rose-400'}>Turn {device.nextScheduledAction.action}</strong> at {device.nextScheduledAction.timeIST}
-                    <span className="text-slate-500 text-[10px] block truncate">({device.nextScheduledAction.scheduleName})</span>
+                    <span className="text-[#64748B] text-[10px] block truncate">({device.nextScheduledAction.scheduleName})</span>
                   </span>
                 ) : (
-                  <span className="text-slate-400">
+                  <span className="text-[#64748B]">
                     No Timer Configured • Ready for Immediate Manual Switch
                   </span>
                 )}
@@ -342,8 +342,8 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({
             </div>
           )}
           {device.lastCommandStatus === 'gas_inhibited' && (
-            <div className="mt-2.5 p-2 rounded-xl bg-rose-500/20 border border-rose-500/40 text-[11px] text-rose-300 flex items-center gap-1.5">
-              <ShieldAlert className="h-4 w-4 shrink-0 text-rose-400" />
+            <div className="mt-2.5 p-2 rounded-xl bg-red-500/20 border border-red-500/40 text-[11px] text-red-300 flex items-center gap-1.5">
+              <ShieldAlert className="h-4 w-4 shrink-0 text-red-400" />
               <span>Gas Safety Rejected: Relays inhibited during combustible gas alert (spark ignition prevention).</span>
             </div>
           )}
@@ -354,8 +354,8 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({
             </div>
           )}
           {device.lastCommandStatus === 'failed' && (
-            <div className="mt-2.5 p-2 rounded-xl bg-rose-950/40 border border-rose-500/30 text-[11px] text-rose-300 flex items-center gap-1.5">
-              <AlertTriangle className="h-4 w-4 shrink-0 text-rose-400" />
+            <div className="mt-2.5 p-2 rounded-xl bg-red-950/40 border border-red-500/30 text-[11px] text-red-300 flex items-center gap-1.5">
+              <AlertTriangle className="h-4 w-4 shrink-0 text-red-400" />
               <span className="truncate">{device.lastCommandError || 'Command failed to execute on ESP32 node.'}</span>
             </div>
           )}
@@ -371,16 +371,16 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({
                   {device.state ? `${runtimeMinutes}m ${runtimeSeconds}s / 30m` : '0m / 30m max'}
                 </span>
               </div>
-              <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden">
+              <div className="w-full bg-[#111820] rounded-full h-1.5 overflow-hidden">
                 <div 
                   className={`h-full transition-all duration-500 ${
-                    runtimePercent > 80 ? 'bg-rose-500' : runtimePercent > 50 ? 'bg-amber-400' : 'bg-blue-400'
+                    runtimePercent > 80 ? 'bg-red-500' : runtimePercent > 50 ? 'bg-amber-400' : 'bg-blue-400'
                   }`}
                   style={{ width: `${device.state ? runtimePercent : 0}%` }}
                 />
               </div>
               {device.state && runtimePercent > 80 && (
-                <span className="text-[10px] text-rose-400 block mt-1 font-semibold">
+                <span className="text-[10px] text-red-400 block mt-1 font-semibold">
                   Approaching 30-minute safety cutoff threshold!
                 </span>
               )}
@@ -389,31 +389,31 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({
         </div>
 
         {/* Footer Metrics Row: Relay Pin & Power */}
-        <div className="mt-4 pt-3 border-t border-slate-800/80">
-          <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
+        <div className="mt-4 pt-3 border-t border-white/[0.08]">
+          <div className="flex items-center justify-between text-xs text-[#94A3B8] mb-2">
             <span className="flex items-center gap-1 font-mono text-[11px]">
-              <Cpu className="h-3 w-3 text-cyan-400" />
+              <Cpu className="h-3 w-3 text-emerald-400" />
               {isUnusedChannel ? '4-Ch Board Ch 4 (Reserved)' : isExhaustFan ? 'Single-Ch Relay • GPIO 27' : `Ch ${device.relayChannel} • GPIO ${device.gpioPin}`}
             </span>
-            <span className="font-mono text-[11px] text-slate-300">
+            <span className="font-mono text-[11px] text-[#F8FAFC]">
               {isUnusedChannel ? '0W' : `Rated ${device.ratedWatts}W`}
             </span>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 p-2 rounded-xl bg-slate-950/70 border border-slate-800/80">
+          <div className="grid grid-cols-2 gap-2 p-2 rounded-xl bg-[#111820] border border-white/[0.08]">
             <div>
-              <span className="text-[10px] text-slate-400 block flex items-center gap-1">
+              <span className="text-[10px] text-[#64748B] block flex items-center gap-1">
                 <Zap className="h-3 w-3 text-amber-400" /> Power Draw
               </span>
-              <span className="text-xs font-mono font-bold text-slate-100">
+              <span className="text-xs font-mono font-bold text-[#F8FAFC]">
                 {formatWatts(device.state ? device.ratedWatts : 0)}
               </span>
             </div>
             <div>
-              <span className="text-[10px] text-slate-400 block flex items-center gap-1">
-                <Clock className="h-3 w-3 text-cyan-400" /> Actuated
+              <span className="text-[10px] text-[#64748B] block flex items-center gap-1">
+                <Clock className="h-3 w-3 text-emerald-400" /> Actuated
               </span>
-              <span className="text-[11px] font-mono text-slate-300 truncate block">
+              <span className="text-[11px] font-mono text-[#94A3B8] truncate block">
                 {device.lastToggled}
               </span>
             </div>

@@ -10,18 +10,18 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col relative overflow-x-hidden">
-      {/* Ambient glowing background orbs */}
+    <div className="min-h-screen bg-[#0B0F12] text-[#F8FAFC] flex flex-col relative overflow-x-hidden selection:bg-emerald-500 selection:text-slate-950">
+      {/* Subtle emerald architectural ambient lighting */}
       <div className="ambient-bg">
         <div className="ambient-orb-1" />
         <div className="ambient-orb-2" />
         <div className="ambient-orb-3" />
       </div>
 
-      {/* Full-Screen Red Emergency Gas Alert Modal */}
+      {/* Full-Screen Red Emergency Gas Alert Modal (Highest Priority) */}
       <GasEmergencyModal />
 
-      {/* Responsive Sidebar */}
+      {/* Responsive Emerald Sidebar */}
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       {/* Main Content Area */}

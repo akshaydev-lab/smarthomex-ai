@@ -45,10 +45,10 @@ export const INA219UsageReportsChart: React.FC<{
     : totalMonthlyCost;
 
   return (
-    <Card className="p-4 sm:p-5 border-cyan-500/20">
+    <Card className="p-4 sm:p-5 bg-[#141C23]/90 border-white/[0.08]">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
         <div className="flex items-center gap-2.5">
-          <div className="p-2 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
+          <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
             <BarChart3 className="h-5 w-5" />
           </div>
           <div>
@@ -63,12 +63,12 @@ export const INA219UsageReportsChart: React.FC<{
         </div>
 
         {/* View Mode Switcher (Daily, Weekly, Monthly) */}
-        <div className="flex items-center bg-slate-900/80 p-1 rounded-xl border border-slate-800 self-start sm:self-auto">
+        <div className="flex items-center bg-[#0B0F12] p-1 rounded-xl border border-white/[0.08] self-start sm:self-auto">
           <button
             onClick={() => setViewMode('daily')}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
               viewMode === 'daily'
-                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm font-semibold'
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-glow-emerald font-semibold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -78,7 +78,7 @@ export const INA219UsageReportsChart: React.FC<{
             onClick={() => setViewMode('weekly')}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
               viewMode === 'weekly'
-                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm font-semibold'
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-glow-emerald font-semibold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -88,7 +88,7 @@ export const INA219UsageReportsChart: React.FC<{
             onClick={() => setViewMode('monthly')}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
               viewMode === 'monthly'
-                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm font-semibold'
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-glow-emerald font-semibold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -99,16 +99,16 @@ export const INA219UsageReportsChart: React.FC<{
 
       {/* Summary KPI Strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-        <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80">
+        <div className="p-3 rounded-xl bg-[#0B0F12]/80 border border-white/[0.06]">
           <span className="text-[11px] text-slate-400 font-mono block">
             {viewMode === 'daily' ? '7-Day Total' : viewMode === 'weekly' ? '4-Week Total' : 'Annual Total'}
           </span>
-          <span className="text-lg font-bold font-mono text-cyan-300">
+          <span className="text-lg font-bold font-mono text-emerald-300">
             {currentKwh.toFixed(1)} kWh
           </span>
         </div>
 
-        <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80">
+        <div className="p-3 rounded-xl bg-[#0B0F12]/80 border border-white/[0.06]">
           <span className="text-[11px] text-slate-400 font-mono block flex items-center gap-1">
             <DollarSign className="h-3 w-3 text-emerald-400" /> Bill @ {telemetry.currencySymbol}{tariffRate}/kWh
           </span>
@@ -117,7 +117,7 @@ export const INA219UsageReportsChart: React.FC<{
           </span>
         </div>
 
-        <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80">
+        <div className="p-3 rounded-xl bg-[#0B0F12]/80 border border-white/[0.06]">
           <span className="text-[11px] text-slate-400 font-mono block">Daily Avg. Load</span>
           <span className="text-lg font-bold font-mono text-slate-200">
             {viewMode === 'daily' 
@@ -128,7 +128,7 @@ export const INA219UsageReportsChart: React.FC<{
           </span>
         </div>
 
-        <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80">
+        <div className="p-3 rounded-xl bg-[#0B0F12]/80 border border-white/[0.06]">
           <span className="text-[11px] text-slate-400 font-mono block flex items-center gap-1">
             <TrendingDown className="h-3 w-3 text-teal-400" /> Eco Mode Savings
           </span>

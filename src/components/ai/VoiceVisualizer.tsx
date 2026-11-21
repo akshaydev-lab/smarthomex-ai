@@ -8,7 +8,7 @@ export const VoiceVisualizer: React.FC<{ isListening: boolean }> = ({ isListenin
           key={idx}
           className={`w-1 rounded-full transition-all duration-200 ${
             isListening
-              ? 'bg-gradient-to-t from-cyan-500 to-teal-300 shadow-[0_0_8px_rgba(6,182,212,0.8)]'
+              ? 'bg-gradient-to-t from-emerald-500 to-teal-300 shadow-[0_0_8px_rgba(16,185,129,0.8)]'
               : 'bg-slate-800'
           }`}
           style={{

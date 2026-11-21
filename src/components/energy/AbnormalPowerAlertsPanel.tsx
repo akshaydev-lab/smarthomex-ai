@@ -29,7 +29,7 @@ export const AbnormalPowerAlertsPanel: React.FC = () => {
   const isPowerAnomalous = telemetry.power != null && telemetry.power > 1000;
 
   return (
-    <Card className="p-4 sm:p-5 border-rose-500/20 bg-gradient-to-b from-slate-900/90 to-slate-950/90">
+    <Card className="p-4 sm:p-5 border-rose-500/20 bg-gradient-to-b from-[#141C23] to-[#0B0F12]">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400">

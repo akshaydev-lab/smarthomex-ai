@@ -123,12 +123,12 @@ export const HomeXAssistant: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* HomeX AI Banner Card */}
-      <Card className="border-cyan-500/30 bg-gradient-to-br from-cyan-950/30 via-slate-900/90 to-slate-950 shadow-glow-cyan">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-cyan-500/15">
+      <Card className="border-emerald-500/30 bg-[#141C23]/90 shadow-glow-emerald">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-white/[0.08]">
           <div className="flex items-center gap-3">
-            <div className="h-12 w-12 rounded-2xl bg-gradient-to-tr from-cyan-500 to-teal-400 p-0.5 shadow-glow-cyan shrink-0">
-              <div className="h-full w-full bg-slate-950 rounded-[14px] flex items-center justify-center">
-                <Sparkles className="h-6 w-6 text-cyan-400" />
+            <div className="h-12 w-12 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 p-0.5 shadow-glow-emerald shrink-0">
+              <div className="h-full w-full bg-[#0B0F12] rounded-[14px] flex items-center justify-center">
+                <Sparkles className="h-6 w-6 text-emerald-400" />
               </div>
             </div>
             <div>
@@ -137,7 +137,7 @@ export const HomeXAssistant: React.FC = () => {
                 {!import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true' ? (
                   <Badge variant="demo" size="sm">Prototype Simulation</Badge>
                 ) : (
-                  <Badge variant="teal" size="sm">Voice AI Interface</Badge>
+                  <Badge variant="emerald" size="sm">Voice AI Interface</Badge>
                 )}
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
@@ -151,8 +151,8 @@ export const HomeXAssistant: React.FC = () => {
               onClick={() => setSoundEnabled(!soundEnabled)}
               className={`p-2 rounded-xl border text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
                 soundEnabled
-                  ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'
-                  : 'bg-slate-900 text-slate-400 border-slate-800'
+                  ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                  : 'bg-[#0B0F12] text-slate-400 border-white/[0.08]'
               }`}
               title="Toggle Audio Text-to-Speech playback"
             >
@@ -167,7 +167,7 @@ export const HomeXAssistant: React.FC = () => {
           <div className="relative mb-3">
             {/* Pulsing ring when active */}
             {isListening && (
-              <div className="absolute inset-0 rounded-full bg-cyan-400/30 animate-ping" />
+              <div className="absolute inset-0 rounded-full bg-emerald-400/30 animate-ping" />
             )}
 
             <button
@@ -176,7 +176,7 @@ export const HomeXAssistant: React.FC = () => {
               className={`relative h-20 w-20 rounded-full flex items-center justify-center transition-all duration-300 shadow-2xl cursor-pointer ${
                 isListening
                   ? 'bg-gradient-to-tr from-rose-500 to-red-600 text-white shadow-glow-danger scale-105'
-                  : 'bg-gradient-to-tr from-cyan-500 to-teal-400 text-slate-950 shadow-glow-cyan hover:scale-105'
+                  : 'bg-gradient-to-tr from-emerald-500 to-teal-400 text-slate-950 shadow-glow-emerald hover:scale-105'
               } disabled:opacity-40 disabled:cursor-not-allowed`}
               aria-label={isListening ? 'Stop listening' : 'Start voice recognition'}
             >
@@ -192,7 +192,7 @@ export const HomeXAssistant: React.FC = () => {
 
           <p className="text-xs font-mono text-slate-400 mt-1">
             {isListening ? (
-              <span className="text-cyan-300 font-semibold animate-pulse">
+              <span className="text-emerald-300 font-semibold animate-pulse">
                 Listening... Speak your command now
               </span>
             ) : isSupported ? (
@@ -204,7 +204,7 @@ export const HomeXAssistant: React.FC = () => {
 
           {/* Live speech preview */}
           {(transcript || interimTranscript) && (
-            <div className="mt-3 px-4 py-2 rounded-xl bg-slate-950/80 border border-cyan-500/30 max-w-lg text-xs font-mono text-cyan-200 animate-fade-in">
+            <div className="mt-3 px-4 py-2 rounded-xl bg-[#0B0F12]/80 border border-emerald-500/30 max-w-lg text-xs font-mono text-emerald-200 animate-fade-in">
               "{transcript || interimTranscript}"
             </div>
           )}
@@ -238,7 +238,7 @@ export const HomeXAssistant: React.FC = () => {
               value={textInput}
               onChange={(e) => setTextInput(e.target.value)}
               placeholder='Type a command: "Turn on light", "What is the temperature?", "Emergency exhaust"...'
-              className="glass-input w-full px-4 py-2.5 rounded-xl text-sm text-slate-100 placeholder:text-slate-400 font-mono"
+              className="glass-input w-full px-4 py-2.5 rounded-xl text-sm text-slate-100 placeholder:text-slate-400 font-mono bg-[#0B0F12]/80 border-white/[0.08]"
             />
           </div>
 
@@ -254,7 +254,7 @@ export const HomeXAssistant: React.FC = () => {
         </form>
 
         {/* Suggestion Chips */}
-        <div className="mt-4 pt-4 border-t border-slate-800/80">
+        <div className="mt-4 pt-4 border-t border-white/[0.08]">
           <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400 block mb-2 font-semibold">
             Quick Command Suggestions (Click to Test)
           </span>
@@ -266,7 +266,7 @@ export const HomeXAssistant: React.FC = () => {
                   setTextInput(prompt);
                   executeCommand(prompt);
                 }}
-                className="text-xs px-2.5 py-1 rounded-lg bg-slate-900/80 hover:bg-cyan-500/10 text-slate-300 hover:text-cyan-300 border border-slate-800 hover:border-cyan-500/30 transition-all font-mono cursor-pointer"
+                className="text-xs px-2.5 py-1 rounded-lg bg-[#0B0F12] hover:bg-emerald-500/10 text-slate-300 hover:text-emerald-300 border border-white/[0.08] hover:border-emerald-500/30 transition-all font-mono cursor-pointer"
               >
                 "{prompt}"
               </button>
@@ -295,10 +295,10 @@ export const HomeXAssistant: React.FC = () => {
       )}
 
       {/* Command History Log */}
-      <Card>
-        <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+      <Card className="bg-[#141C23]/90 border-white/[0.08]">
+        <div className="flex items-center justify-between pb-3 border-b border-white/[0.08]">
           <div className="flex items-center gap-2">
-            <Clock className="h-4 w-4 text-cyan-400" />
+            <Clock className="h-4 w-4 text-emerald-400" />
             <h3 className="font-bold text-sm text-slate-200">Voice Command Execution Log</h3>
           </div>
           {voiceLogs.length > 0 && (
@@ -311,7 +311,7 @@ export const HomeXAssistant: React.FC = () => {
           )}
         </div>
 
-        <div className="mt-3 divide-y divide-slate-800/80">
+        <div className="mt-3 divide-y divide-white/[0.06]">
           {voiceLogs.length === 0 ? (
             <div className="py-6 text-center text-xs text-slate-400 font-mono">
               No recent voice commands. Use the microphone or click a prompt above.
@@ -320,12 +320,12 @@ export const HomeXAssistant: React.FC = () => {
             voiceLogs.map((log) => (
               <div key={log.id} className="py-3 text-xs space-y-1">
                 <div className="flex items-center justify-between">
-                  <span className="font-mono font-bold text-cyan-300">
+                  <span className="font-mono font-bold text-emerald-300">
                     "{log.transcript}"
                   </span>
                   <span className="text-[10px] text-slate-400">{log.timestamp}</span>
                 </div>
-                <p className="text-slate-300 pl-2 border-l border-slate-700">
+                <p className="text-slate-300 pl-2 border-l border-white/[0.08]">
                   {log.response}
                 </p>
                 {log.executedAction && (

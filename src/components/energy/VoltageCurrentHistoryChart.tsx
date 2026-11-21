@@ -26,16 +26,16 @@ export const VoltageCurrentHistoryChart: React.FC<{ data: EnergyHourlyData[] }> 
     : null;
 
   return (
-    <Card className="p-4 sm:p-5 border-cyan-500/20">
+    <Card className="p-4 sm:p-5 bg-[#141C23]/90 border-white/[0.08]">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
+          <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
             <Activity className="h-5 w-5" />
           </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-base font-bold text-slate-100">Voltage & Current Telemetry History</h3>
-              <Badge variant="cyan" size="sm">Dual-Axis INA219</Badge>
+              <Badge variant="emerald" size="sm">Dual-Axis INA219</Badge>
               {isDemoMode && <Badge variant="demo" size="sm">DEMO DATA</Badge>}
             </div>
             <p className="text-xs text-slate-400 font-mono mt-0.5">
@@ -46,8 +46,8 @@ export const VoltageCurrentHistoryChart: React.FC<{ data: EnergyHourlyData[] }> 
 
         {/* Safety Bounds Badge */}
         <div className="flex items-center gap-2 text-xs font-mono text-slate-400">
-          <span className="flex items-center gap-1 text-cyan-300">
-            <span className="h-2 w-2 rounded-full bg-cyan-400" /> Voltage (220-240V)
+          <span className="flex items-center gap-1 text-emerald-300">
+            <span className="h-2 w-2 rounded-full bg-emerald-400" /> Voltage (220-240V)
           </span>
           <span className="flex items-center gap-1 text-amber-400">
             <span className="h-2 w-2 rounded-full bg-amber-400" /> Current (0-5A)

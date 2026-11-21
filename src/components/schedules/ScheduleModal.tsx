@@ -110,12 +110,12 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto animate-fade-in">
-      <div className="glass-panel rounded-3xl max-w-xl w-full p-5 sm:p-7 border border-cyan-500/30 shadow-2xl my-auto text-slate-100 animate-slide-up">
+    <div className="fixed inset-0 z-50 bg-[#0B0F12]/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto animate-fade-in">
+      <div className="bg-[#141C23] rounded-3xl max-w-xl w-full p-5 sm:p-7 border border-emerald-500/30 shadow-2xl my-auto text-slate-100 animate-slide-up">
         {/* Header */}
-        <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+        <div className="flex items-center justify-between pb-4 border-b border-white/[0.08]">
           <div className="flex items-center gap-2.5">
-            <div className="h-10 w-10 rounded-xl bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 flex items-center justify-center">
+            <div className="h-10 w-10 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 flex items-center justify-center">
               <CalendarClock className="h-5 w-5" />
             </div>
             <div>
@@ -147,7 +147,7 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g., Morning Water Pump Fill, Evening Porch Light"
-              className="glass-input w-full px-3.5 py-2.5 rounded-xl text-slate-100 text-xs font-medium"
+              className="glass-input w-full px-3.5 py-2.5 rounded-xl text-slate-100 text-xs font-medium bg-[#0B0F12]/80 border-white/[0.08]"
             />
           </div>
 
@@ -160,7 +160,7 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
               <select
                 value={deviceId}
                 onChange={(e) => setDeviceId(e.target.value)}
-                className="glass-input w-full px-3.5 py-2.5 rounded-xl text-slate-100 bg-slate-900 text-xs font-medium"
+                className="glass-input w-full px-3.5 py-2.5 rounded-xl text-slate-100 bg-[#0B0F12] border-white/[0.08] text-xs font-medium"
               >
                 {devices.map(d => (
                   <option key={d.id} value={d.id}>
@@ -180,8 +180,8 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
                   onClick={() => setAction('ON')}
                   className={`py-2 px-3 rounded-xl font-bold transition-all border cursor-pointer ${
                     action === 'ON'
-                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-[0_0_12px_rgba(16,185,129,0.25)]'
-                      : 'bg-slate-900/60 text-slate-400 border-slate-800 hover:text-slate-200'
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-glow-emerald'
+                      : 'bg-[#0B0F12]/60 text-slate-400 border-white/[0.08] hover:text-slate-200'
                   }`}
                 >
                   TURN ON
@@ -191,8 +191,8 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
                   onClick={() => setAction('OFF')}
                   className={`py-2 px-3 rounded-xl font-bold transition-all border cursor-pointer ${
                     action === 'OFF'
-                      ? 'bg-rose-500/20 text-rose-300 border-rose-500/50 shadow-[0_0_12px_rgba(244,63,94,0.25)]'
-                      : 'bg-slate-900/60 text-slate-400 border-slate-800 hover:text-slate-200'
+                      ? 'bg-rose-500/20 text-rose-300 border-rose-500/50 shadow-glow-danger'
+                      : 'bg-[#0B0F12]/60 text-slate-400 border-white/[0.08] hover:text-slate-200'
                   }`}
                 >
                   TURN OFF
@@ -206,18 +206,18 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
             <div>
               <label className="block text-slate-300 font-semibold mb-1 flex items-center justify-between">
                 <span>Start Time (IST)</span>
-                <span className="text-cyan-400 font-mono text-[11px] font-bold">
+                <span className="text-emerald-400 font-mono text-[11px] font-bold">
                   {formatTimeIST(scheduledTime)}
                 </span>
               </label>
               <div className="relative">
-                <Clock className="h-4 w-4 text-cyan-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <Clock className="h-4 w-4 text-emerald-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="time"
                   required
                   value={scheduledTime}
                   onChange={(e) => setScheduledTime(e.target.value)}
-                  className="glass-input w-full pl-9 pr-3 py-2.5 rounded-xl text-slate-100 font-mono text-xs"
+                  className="glass-input w-full pl-9 pr-3 py-2.5 rounded-xl text-slate-100 font-mono text-xs bg-[#0B0F12]/80 border-white/[0.08]"
                 />
               </div>
             </div>
@@ -233,7 +233,7 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
                   disabled={repeatType !== 'once'}
                   value={scheduledDate}
                   onChange={(e) => setScheduledDate(e.target.value)}
-                  className="glass-input w-full pl-9 pr-3 py-2.5 rounded-xl text-slate-100 font-mono text-xs disabled:opacity-40"
+                  className="glass-input w-full pl-9 pr-3 py-2.5 rounded-xl text-slate-100 font-mono text-xs bg-[#0B0F12]/80 border-white/[0.08] disabled:opacity-40"
                 />
               </div>
             </div>
@@ -258,8 +258,8 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
                   onClick={() => handleRepeatTypeChange(opt.id as ScheduleRepeatType)}
                   className={`py-2 px-2 rounded-xl text-center font-medium transition-all border text-xs cursor-pointer ${
                     repeatType === opt.id
-                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 font-bold shadow-sm'
-                      : 'bg-slate-900/60 text-slate-400 border-slate-800 hover:text-slate-200'
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 font-bold shadow-glow-emerald'
+                      : 'bg-[#0B0F12]/60 text-slate-400 border-white/[0.08] hover:text-slate-200'
                   }`}
                 >
                   {opt.label}
@@ -273,7 +273,7 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
             <div>
               <label className="block text-slate-400 font-medium mb-1.5 flex items-center justify-between">
                 <span>Select Specific Days of Week</span>
-                <span className="text-[11px] text-cyan-400 font-mono">
+                <span className="text-[11px] text-emerald-400 font-mono">
                   {repeatDays.length} of 7 Selected
                 </span>
               </label>
@@ -287,8 +287,8 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
                       onClick={() => toggleDay(day)}
                       className={`flex-1 py-1.5 px-2 rounded-xl text-center text-xs font-mono font-bold transition-all border cursor-pointer ${
                         isSelected
-                          ? 'bg-cyan-500/25 text-cyan-300 border-cyan-400 shadow-glow-cyan'
-                          : 'bg-slate-900/40 text-slate-500 border-slate-800 hover:text-slate-300'
+                          ? 'bg-emerald-500/25 text-emerald-300 border-emerald-400 shadow-glow-emerald'
+                          : 'bg-[#0B0F12]/40 text-slate-500 border-white/[0.06] hover:text-slate-300'
                       }`}
                     >
                       {day}
@@ -300,7 +300,7 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
           )}
 
           {/* Enable / Disable Checkbox */}
-          <div className="p-3 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-between">
+          <div className="p-3 rounded-2xl bg-[#0B0F12] border border-white/[0.08] flex items-center justify-between">
             <div>
               <span className="font-semibold text-slate-200 block">Enable Schedule</span>
               <span className="text-[11px] text-slate-400">
@@ -311,12 +311,12 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
               type="checkbox"
               checked={enabled}
               onChange={(e) => setEnabled(e.target.checked)}
-              className="h-4 w-4 accent-cyan-500 rounded cursor-pointer"
+              className="h-4 w-4 accent-emerald-500 rounded cursor-pointer"
             />
           </div>
 
           {/* Footer Buttons */}
-          <div className="pt-3 border-t border-slate-800 flex items-center justify-end gap-3">
+          <div className="pt-3 border-t border-white/[0.08] flex items-center justify-end gap-3">
             <Button variant="ghost" size="sm" type="button" onClick={onClose}>
               Cancel
             </Button>

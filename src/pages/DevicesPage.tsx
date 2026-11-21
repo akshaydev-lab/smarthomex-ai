@@ -50,17 +50,17 @@ export const DevicesPage: React.FC = () => {
       <HardwareBridgeController />
 
       {/* Filter and Search Bar */}
-      <Card className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <Card className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#141C23] border-white/[0.08]">
         <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
-          <SlidersHorizontal className="h-4 w-4 text-cyan-400 shrink-0 mr-1" />
+          <SlidersHorizontal className="h-4 w-4 text-emerald-400 shrink-0 mr-1" />
           {rooms.map(room => (
             <button
               key={room}
               onClick={() => setSelectedRoom(room)}
               className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-all cursor-pointer ${
                 selectedRoom === room
-                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-semibold'
-                  : 'text-slate-400 hover:text-slate-200 bg-slate-900/60 border border-slate-800'
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-semibold'
+                  : 'text-[#94A3B8] hover:text-[#F8FAFC] bg-[#111820] border border-white/[0.08]'
               }`}
             >
               {room === 'all' ? 'All Rooms & Hardware' : room}
@@ -69,13 +69,13 @@ export const DevicesPage: React.FC = () => {
         </div>
 
         <div className="relative w-full sm:w-64">
-          <Search className="h-4 w-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <Search className="h-4 w-4 text-[#64748B] absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search device or GPIO (14, 25, 26, 27)..."
-            className="glass-input w-full pl-9 pr-3 py-1.5 rounded-xl text-xs text-slate-200 placeholder:text-slate-400"
+            className="glass-input w-full pl-9 pr-3 py-1.5 rounded-xl text-xs text-[#F8FAFC] placeholder:text-[#64748B]"
           />
         </div>
       </Card>
@@ -85,25 +85,25 @@ export const DevicesPage: React.FC = () => {
       {/* ===================================================================== */}
       {fourChannelDevices.length > 0 && (
         <div className="space-y-3">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-1 border-b border-slate-800/80">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-1 border-b border-white/[0.08]">
             <div className="flex items-center gap-2.5">
-              <div className="h-8 w-8 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+              <div className="h-8 w-8 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
                 <Layers className="h-4 w-4" />
               </div>
               <div>
-                <h2 className="text-sm sm:text-base font-bold text-slate-100 flex items-center gap-2">
+                <h2 className="text-sm sm:text-base font-bold text-[#F8FAFC] flex items-center gap-2">
                   4-Channel Active-LOW Relay Module
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-semibold">
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-semibold">
                     Optocoupler Isolated
                   </span>
                 </h2>
-                <p className="text-xs text-slate-400">
+                <p className="text-xs text-[#94A3B8]">
                   Channel 1: Light (GPIO 14) • Channel 2: Fan (GPIO 25) • Channel 3: Motor (GPIO 26) • Channel 4: Permanently Reserved / Unused
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2 text-xs font-mono text-slate-400">
-              <span className="h-2 w-2 rounded-full bg-cyan-400"></span>
+            <div className="flex items-center gap-2 text-xs font-mono text-[#94A3B8]">
+              <span className="h-2 w-2 rounded-full bg-emerald-400"></span>
               Active LOW (0V = Energized)
             </div>
           </div>
@@ -127,7 +127,7 @@ export const DevicesPage: React.FC = () => {
                 <Wind className="h-4 w-4" />
               </div>
               <div>
-                <h2 className="text-sm sm:text-base font-bold text-slate-100 flex items-center gap-2">
+                <h2 className="text-sm sm:text-base font-bold text-[#F8FAFC] flex items-center gap-2">
                   Separate Single-Channel Relay Module
                   <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-teal-500/20 text-teal-300 border border-teal-500/40 font-bold">
                     GPIO 27 • Automatic Control Only
@@ -155,12 +155,12 @@ export const DevicesPage: React.FC = () => {
             </div>
 
             {/* Hardware & Explosion Safety Interlock Details Card */}
-            <Card className="lg:col-span-2 p-5 bg-gradient-to-br from-teal-950/20 via-slate-900/90 to-slate-950 border-teal-500/30 flex flex-col justify-between">
+            <Card className="lg:col-span-2 p-5 bg-[#141C23] border-white/[0.08] flex flex-col justify-between">
               <div>
-                <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                <div className="flex items-center justify-between pb-3 border-b border-white/[0.08]">
                   <div className="flex items-center gap-2">
                     <ShieldAlert className="h-5 w-5 text-teal-400" />
-                    <h3 className="font-bold text-sm text-slate-100">
+                    <h3 className="font-bold text-sm text-[#F8FAFC]">
                       Hazardous Atmosphere & Spark Prevention Architecture
                     </h3>
                   </div>
@@ -169,14 +169,14 @@ export const DevicesPage: React.FC = () => {
                   </Badge>
                 </div>
 
-                <div className="mt-3 space-y-2 text-xs text-slate-300 leading-relaxed">
+                <div className="mt-3 space-y-2 text-xs text-[#94A3B8] leading-relaxed">
                   <p>
                     <strong className="text-teal-300">Why a separate single-channel relay on GPIO 27?</strong> The kitchen exhaust fan is physically and logically isolated from the 4-channel appliance module to guarantee independent safety control and prevent common-cause failure.
                   </p>
                   <p>
-                    <strong className="text-rose-300">Strict Life-Safety Rule:</strong> Switching mechanical relay contacts or running ordinary brushed DC motors generates electrical arcs that ignite combustible LPG/methane fuel-air mixtures. Automatic exhaust activation is <strong>strictly disabled during gas emergency</strong> unless the complete assembly (fan, motor, relay, wiring, and enclosure) is certified explosion-proof.
+                    <strong className="text-red-400">Strict Life-Safety Rule:</strong> Switching mechanical relay contacts or running ordinary brushed DC motors generates electrical arcs that ignite combustible LPG/methane fuel-air mixtures. Automatic exhaust activation is <strong>strictly disabled during gas emergency</strong> unless the complete assembly (fan, motor, relay, wiring, and enclosure) is certified explosion-proof.
                   </p>
-                  <p className="font-mono text-[11px] text-slate-400 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800">
+                  <p className="font-mono text-[11px] text-[#94A3B8] bg-[#0B0F12] p-2.5 rounded-xl border border-white/[0.06]">
                     • Physical Relay: 1-Channel Active-LOW Optocoupled Relay (GPIO 27)<br />
                     • Control Logic: Automatic only (Operated by gas/temperature state engine)<br />
                     • Emergency Action: {gasSafetyState.exhaustSafetyCertified ? 'ACTIVATED (Certified explosion-proof mode)' : 'LOCKED OUT (Spark ignition prevention)'}
@@ -184,12 +184,12 @@ export const DevicesPage: React.FC = () => {
                 </div>
               </div>
 
-              <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs font-mono text-slate-400">
+              <div className="mt-4 pt-3 border-t border-white/[0.08] flex items-center justify-between text-xs font-mono text-[#94A3B8]">
                 <span className="flex items-center gap-1.5 text-teal-300">
                   <CheckCircle2 className="h-4 w-4 text-teal-400" />
                   Independent Safety Circuit Verified
                 </span>
-                <span className="text-slate-500">
+                <span className="text-[#64748B]">
                   Target Pin: ESP32 GPIO 27
                 </span>
               </div>
@@ -201,22 +201,22 @@ export const DevicesPage: React.FC = () => {
       {/* ===================================================================== */}
       {/* SECTION 3: COMPREHENSIVE ESP32 HARDWARE PINOUT SPECIFICATIONS          */}
       {/* ===================================================================== */}
-      <Card className="p-5">
-        <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-800">
+      <Card className="p-5 bg-[#141C23] border-white/[0.08]">
+        <div className="flex items-center justify-between mb-4 pb-3 border-b border-white/[0.08]">
           <div className="flex items-center gap-2.5">
-            <Cpu className="h-5 w-5 text-cyan-400" />
+            <Cpu className="h-5 w-5 text-emerald-400" />
             <div>
-              <h3 className="text-sm font-bold text-slate-100">ESP32 Hardware Specifications & Correct Pin Mapping</h3>
-              <p className="text-xs text-slate-400">Optocoupler isolation, active-low triggering, and life-safety GPIO architecture</p>
+              <h3 className="text-sm font-bold text-[#F8FAFC]">ESP32 Hardware Specifications & Pin Mapping</h3>
+              <p className="text-xs text-[#94A3B8]">Optocoupler isolation, active-low triggering, and life-safety GPIO architecture</p>
             </div>
           </div>
-          <Badge variant="teal" size="sm">v2.5.0 Hardware Verified</Badge>
+          <Badge variant="emerald" size="sm">Hardware Verified</Badge>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs font-mono">
             <thead>
-              <tr className="border-b border-slate-800 text-slate-400">
+              <tr className="border-b border-white/[0.08] text-[#64748B]">
                 <th className="py-2 px-3">Relay Module</th>
                 <th className="py-2 px-3">Channel / Role</th>
                 <th className="py-2 px-3">Assigned Load</th>
@@ -226,42 +226,42 @@ export const DevicesPage: React.FC = () => {
                 <th className="py-2 px-3">Control & Safety Constraint</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/60 text-slate-300">
+            <tbody className="divide-y divide-white/[0.06] text-slate-300">
               <tr>
-                <td className="py-2.5 px-3 font-bold text-cyan-300">4-Channel Board</td>
+                <td className="py-2.5 px-3 font-bold text-emerald-300">4-Channel Board</td>
                 <td className="py-2.5 px-3">Channel 1</td>
                 <td className="py-2.5 px-3">Living Room Light</td>
-                <td className="py-2.5 px-3 text-cyan-400 font-bold">GPIO 14</td>
+                <td className="py-2.5 px-3 text-emerald-400 font-bold">GPIO 14</td>
                 <td className="py-2.5 px-3">Active LOW (0V)</td>
                 <td className="py-2.5 px-3">45 W</td>
-                <td className="py-2.5 px-3 text-slate-400">Manual / Timer • Gas Lockout Tripped</td>
+                <td className="py-2.5 px-3 text-[#94A3B8]">Manual / Timer • Gas Lockout Tripped</td>
               </tr>
               <tr>
-                <td className="py-2.5 px-3 font-bold text-cyan-300">4-Channel Board</td>
+                <td className="py-2.5 px-3 font-bold text-emerald-300">4-Channel Board</td>
                 <td className="py-2.5 px-3">Channel 2</td>
                 <td className="py-2.5 px-3">Master Ceiling Fan</td>
-                <td className="py-2.5 px-3 text-cyan-400 font-bold">GPIO 25</td>
+                <td className="py-2.5 px-3 text-emerald-400 font-bold">GPIO 25</td>
                 <td className="py-2.5 px-3">Active LOW (0V)</td>
                 <td className="py-2.5 px-3">75 W</td>
-                <td className="py-2.5 px-3 text-slate-400">Manual / Timer • Gas Lockout Tripped</td>
+                <td className="py-2.5 px-3 text-[#94A3B8]">Manual / Timer • Gas Lockout Tripped</td>
               </tr>
               <tr>
-                <td className="py-2.5 px-3 font-bold text-cyan-300">4-Channel Board</td>
+                <td className="py-2.5 px-3 font-bold text-emerald-300">4-Channel Board</td>
                 <td className="py-2.5 px-3">Channel 3</td>
                 <td className="py-2.5 px-3">Water Booster Motor</td>
-                <td className="py-2.5 px-3 text-cyan-400 font-bold">GPIO 26</td>
+                <td className="py-2.5 px-3 text-emerald-400 font-bold">GPIO 26</td>
                 <td className="py-2.5 px-3">Active LOW (0V)</td>
                 <td className="py-2.5 px-3">750 W</td>
                 <td className="py-2.5 px-3 text-emerald-400">Max 30m Auto-Cutoff • Gas Lockout Tripped</td>
               </tr>
-              <tr className="bg-slate-950/40">
-                <td className="py-2.5 px-3 font-bold text-slate-500">4-Channel Board</td>
-                <td className="py-2.5 px-3 text-slate-500">Channel 4</td>
-                <td className="py-2.5 px-3 text-slate-500 font-semibold">Permanently Reserved / Unused</td>
-                <td className="py-2.5 px-3 text-slate-500 font-bold">— (Unassigned)</td>
-                <td className="py-2.5 px-3 text-slate-500">Active LOW</td>
-                <td className="py-2.5 px-3 text-slate-500">0 W</td>
-                <td className="py-2.5 px-3 text-rose-400 font-semibold">Strictly Disabled / Locked (Hardware Spare)</td>
+              <tr className="bg-[#0B0F12]">
+                <td className="py-2.5 px-3 font-bold text-[#64748B]">4-Channel Board</td>
+                <td className="py-2.5 px-3 text-[#64748B]">Channel 4</td>
+                <td className="py-2.5 px-3 text-[#64748B] font-semibold">Permanently Reserved / Unused</td>
+                <td className="py-2.5 px-3 text-[#64748B] font-bold">— (Unassigned)</td>
+                <td className="py-2.5 px-3 text-[#64748B]">Active LOW</td>
+                <td className="py-2.5 px-3 text-[#64748B]">0 W</td>
+                <td className="py-2.5 px-3 text-red-400 font-semibold">Strictly Disabled / Locked (Hardware Spare)</td>
               </tr>
               <tr className="bg-teal-950/20">
                 <td className="py-2.5 px-3 font-bold text-teal-300">Separate Single Relay</td>
@@ -273,50 +273,50 @@ export const DevicesPage: React.FC = () => {
                 <td className="py-2.5 px-3 text-amber-300 font-semibold">Automatic Control Only (ATEX Certified Interlock)</td>
               </tr>
               {/* Sensor & Alert Peripherals */}
-              <tr className="bg-slate-900/40">
-                <td className="py-2.5 px-3 text-slate-400">Sensor Peripheral</td>
+              <tr className="bg-[#111820]">
+                <td className="py-2.5 px-3 text-[#94A3B8]">Sensor Peripheral</td>
                 <td className="py-2.5 px-3">DHT11</td>
                 <td className="py-2.5 px-3">Ambient Temp & Humidity</td>
                 <td className="py-2.5 px-3 text-teal-400 font-bold">GPIO 32</td>
                 <td className="py-2.5 px-3">Single-Bus Digital</td>
                 <td className="py-2.5 px-3">—</td>
-                <td className="py-2.5 px-3 text-slate-400">10k Pull-up to 3.3V</td>
+                <td className="py-2.5 px-3 text-[#94A3B8]">10k Pull-up to 3.3V</td>
               </tr>
-              <tr className="bg-slate-900/40">
-                <td className="py-2.5 px-3 text-slate-400">Sensor Peripheral</td>
+              <tr className="bg-[#111820]">
+                <td className="py-2.5 px-3 text-[#94A3B8]">Sensor Peripheral</td>
                 <td className="py-2.5 px-3">MQ-2</td>
                 <td className="py-2.5 px-3">Combustible Gas & Smoke</td>
-                <td className="py-2.5 px-3 text-rose-400 font-bold">GPIO 34</td>
+                <td className="py-2.5 px-3 text-red-400 font-bold">GPIO 34</td>
                 <td className="py-2.5 px-3">ADC1 Ch6 (0-4095)</td>
                 <td className="py-2.5 px-3">—</td>
-                <td className="py-2.5 px-3 text-slate-400">100ms Safety Loop • ADC &lt; 45 Wire Fault</td>
+                <td className="py-2.5 px-3 text-[#94A3B8]">100ms Safety Loop • ADC &lt; 45 Wire Fault</td>
               </tr>
-              <tr className="bg-slate-900/40">
-                <td className="py-2.5 px-3 text-slate-400">Sensor Peripheral</td>
+              <tr className="bg-[#111820]">
+                <td className="py-2.5 px-3 text-[#94A3B8]">Sensor Peripheral</td>
                 <td className="py-2.5 px-3">INA219</td>
                 <td className="py-2.5 px-3">Voltage, Current & Power</td>
-                <td className="py-2.5 px-3 text-cyan-400 font-bold">SDA 21, SCL 22</td>
+                <td className="py-2.5 px-3 text-emerald-400 font-bold">SDA 21, SCL 22</td>
                 <td className="py-2.5 px-3">I2C (0x40)</td>
                 <td className="py-2.5 px-3">—</td>
-                <td className="py-2.5 px-3 text-slate-400">Overcurrent & Voltage Sag/Surge Alerting</td>
+                <td className="py-2.5 px-3 text-[#94A3B8]">Overcurrent & Voltage Sag/Surge Alerting</td>
               </tr>
-              <tr className="bg-slate-900/40">
-                <td className="py-2.5 px-3 text-slate-400">Alert Peripheral</td>
+              <tr className="bg-[#111820]">
+                <td className="py-2.5 px-3 text-[#94A3B8]">Alert Peripheral</td>
                 <td className="py-2.5 px-3">Active Buzzer</td>
                 <td className="py-2.5 px-3">Acoustic Emergency Siren</td>
                 <td className="py-2.5 px-3 text-amber-400 font-bold">GPIO 33</td>
                 <td className="py-2.5 px-3">Digital 5V Active</td>
                 <td className="py-2.5 px-3">—</td>
-                <td className="py-2.5 px-3 text-slate-400">200ms Siren Cadence on Gas Danger</td>
+                <td className="py-2.5 px-3 text-[#94A3B8]">200ms Siren Cadence on Gas Danger</td>
               </tr>
-              <tr className="bg-slate-900/40">
-                <td className="py-2.5 px-3 text-slate-400">Safety Control</td>
+              <tr className="bg-[#111820]">
+                <td className="py-2.5 px-3 text-[#94A3B8]">Safety Control</td>
                 <td className="py-2.5 px-3">BOOT Button</td>
                 <td className="py-2.5 px-3">Physical Safety Reset</td>
                 <td className="py-2.5 px-3 text-emerald-400 font-bold">GPIO 0</td>
                 <td className="py-2.5 px-3">Active LOW Pull-up</td>
                 <td className="py-2.5 px-3">—</td>
-                <td className="py-2.5 px-3 text-slate-400">Disarms lockout only if gas &lt; 150 PPM</td>
+                <td className="py-2.5 px-3 text-[#94A3B8]">Disarms lockout only if gas is cleared</td>
               </tr>
             </tbody>
           </table>
