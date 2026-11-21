@@ -1,9 +1,22 @@
 /**
- * Web Audio API Emergency Siren Synthesizer
+ * Web Audio API Emergency Siren & Diagnostic Sound Synthesizer
  * 
  * Generates an acoustic dual-tone emergency warning siren (960Hz / 770Hz)
- * without requiring external MP3 files. Operates 100% client-side and offline.
+ * and diagnostic speaker test chimes (880Hz sine) without requiring external MP3 files.
+ * Operates 100% client-side and offline.
  */
+
+export type AudioDiagnosticStatus = 'READY' | 'PLAYING' | 'BLOCKED' | 'ERROR';
+
+export interface AudioDiagnosticDetails {
+  isSupported: boolean;
+  state: AudioContextState | 'uninitialized' | 'unsupported';
+  sampleRate: number | null;
+  isPlayingSiren: boolean;
+  isBeepPlaying: boolean;
+  hasActiveContext: boolean;
+  lastError: string | null;
+}
 
 class EmergencySirenService {
   private audioCtx: AudioContext | null = null;
@@ -16,13 +29,25 @@ class EmergencySirenService {
   private highTone: boolean = true;
   private unlockListenerAttached: boolean = false;
 
-  private initContext() {
+  // Diagnostic Test Beep Properties
+  private beepOsc: OscillatorNode | null = null;
+  private beepGain: GainNode | null = null;
+  private beepTimeoutId: any = null;
+  private isBeeping: boolean = false;
+  private lastError: string | null = null;
+
+  public initContext(): AudioContext | null {
     if (!this.audioCtx && typeof window !== 'undefined') {
-      const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
-      if (AudioCtxClass) {
-        this.audioCtx = new AudioCtxClass();
+      try {
+        const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioCtxClass) {
+          this.audioCtx = new AudioCtxClass();
+        }
+      } catch (err: any) {
+        this.lastError = err?.message || 'Failed to initialize AudioContext';
       }
     }
+    return this.audioCtx;
   }
 
   private setupAutoplayUnlock() {
@@ -39,7 +64,9 @@ class EmergencySirenService {
           if (this.shouldBePlaying && !this.isPlaying) {
             this.start();
           }
-        }).catch(() => {});
+        }).catch((err: any) => {
+          this.lastError = err?.message || 'Autoplay unlock failed';
+        });
       } else if (this.shouldBePlaying && !this.isPlaying) {
         this.start();
       }
@@ -51,22 +78,28 @@ class EmergencySirenService {
     window.addEventListener('touchstart', unlock, { once: true, capture: true });
   }
 
-  public start() {
+  public start(): boolean {
     this.shouldBePlaying = true;
+    this.lastError = null;
 
     if (this.stopTimeoutId) {
       clearTimeout(this.stopTimeoutId);
       this.stopTimeoutId = null;
     }
 
-    if (this.isPlaying) return;
+    // Stop any diagnostic beep when emergency siren activates
+    this.stopTestBeep();
+
+    if (this.isPlaying) return true;
 
     try {
       this.initContext();
-      if (!this.audioCtx) return;
+      if (!this.audioCtx) return false;
 
       if (this.audioCtx.state !== 'running') {
-        this.audioCtx.resume().catch(() => {});
+        this.audioCtx.resume().catch((err: any) => {
+          this.lastError = err?.message || 'AudioContext resume error';
+        });
         this.setupAutoplayUnlock();
       }
 
@@ -76,7 +109,7 @@ class EmergencySirenService {
       this.oscillator.type = 'sawtooth';
       this.oscillator.frequency.setValueAtTime(960, this.audioCtx.currentTime);
 
-      // Master volume
+      // Master volume with smooth ramp
       this.gainNode.gain.setValueAtTime(0.001, this.audioCtx.currentTime);
       this.gainNode.gain.exponentialRampToValueAtTime(0.25, this.audioCtx.currentTime + 0.1);
 
@@ -93,13 +126,16 @@ class EmergencySirenService {
         const freq = this.highTone ? 960 : 770;
         this.oscillator.frequency.setValueAtTime(freq, this.audioCtx.currentTime);
       }, 250);
-    } catch {
-      // Audio autoplay policy may require user interaction
+
+      return true;
+    } catch (err: any) {
+      this.lastError = err?.message || 'Failed to start siren';
       this.setupAutoplayUnlock();
+      return false;
     }
   }
 
-  public stop() {
+  public stop(): void {
     this.shouldBePlaying = false;
 
     if (this.stopTimeoutId) {
@@ -138,8 +174,136 @@ class EmergencySirenService {
     }, 120);
   }
 
+  /**
+   * Diagnostic Speaker Test Beep
+   * Plays a clean, pleasant 880Hz sine wave chime for speaker verification.
+   */
+  public async playTestBeep(frequency: number = 880, durationMs: number = 500): Promise<boolean> {
+    if (typeof window === 'undefined') return false;
+
+    this.stopTestBeep();
+    this.lastError = null;
+
+    try {
+      this.initContext();
+      if (!this.audioCtx) return false;
+
+      if (this.audioCtx.state === 'suspended') {
+        try {
+          await this.audioCtx.resume();
+        } catch (err: any) {
+          this.lastError = err?.message || 'AudioContext suspended by browser autoplay policy';
+          this.setupAutoplayUnlock();
+          return false;
+        }
+      }
+
+      const now = this.audioCtx.currentTime;
+      this.beepOsc = this.audioCtx.createOscillator();
+      this.beepGain = this.audioCtx.createGain();
+
+      this.beepOsc.type = 'sine';
+      this.beepOsc.frequency.setValueAtTime(frequency, now);
+
+      // Clean chime envelope (gentle attack, sustain, smooth decay)
+      this.beepGain.gain.setValueAtTime(0.001, now);
+      this.beepGain.gain.exponentialRampToValueAtTime(0.20, now + 0.05);
+      this.beepGain.gain.setValueAtTime(0.20, now + Math.max(0.06, (durationMs / 1000) - 0.1));
+      this.beepGain.gain.exponentialRampToValueAtTime(0.0001, now + (durationMs / 1000));
+
+      this.beepOsc.connect(this.beepGain);
+      this.beepGain.connect(this.audioCtx.destination);
+
+      this.beepOsc.start(now);
+      this.isBeeping = true;
+
+      this.beepTimeoutId = setTimeout(() => {
+        this.stopTestBeep();
+      }, durationMs);
+
+      return true;
+    } catch (err: any) {
+      this.lastError = err?.message || 'Speaker test beep error';
+      this.stopTestBeep();
+      return false;
+    }
+  }
+
+  public stopTestBeep(): void {
+    if (this.beepTimeoutId) {
+      clearTimeout(this.beepTimeoutId);
+      this.beepTimeoutId = null;
+    }
+    if (this.beepOsc) {
+      try {
+        this.beepOsc.stop();
+        this.beepOsc.disconnect();
+      } catch {
+        // ignore
+      }
+      this.beepOsc = null;
+    }
+    if (this.beepGain) {
+      try {
+        this.beepGain.disconnect();
+      } catch {
+        // ignore
+      }
+      this.beepGain = null;
+    }
+    this.isBeeping = false;
+  }
+
+  /**
+   * Immediately halts all audio (both emergency siren and test chime).
+   */
+  public stopAll(): void {
+    this.stopTestBeep();
+    this.stop();
+  }
+
   public getIsPlaying(): boolean {
     return this.isPlaying;
+  }
+
+  public getIsBeeping(): boolean {
+    return this.isBeeping;
+  }
+
+  /**
+   * Evaluates current Web Audio API status for diagnostic badge:
+   * - 'READY': AudioContext is ready or currently idle in running state.
+   * - 'PLAYING': Audio is actively being synthesized through oscillator & gain node.
+   * - 'BLOCKED': AudioContext is suspended by browser autoplay policy (click required to unblock).
+   * - 'ERROR': Web Audio API unsupported or context is closed/faulted.
+   */
+  public getDiagnosticStatus(): AudioDiagnosticStatus {
+    if (typeof window === 'undefined') return 'READY';
+    const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtxClass) return 'ERROR';
+
+    if (this.isPlaying || this.isBeeping) return 'PLAYING';
+
+    if (!this.audioCtx) return 'READY';
+
+    if (this.audioCtx.state === 'running') return 'READY';
+    if (this.audioCtx.state === 'suspended') return 'BLOCKED';
+    if (this.audioCtx.state === 'closed') return 'ERROR';
+
+    return 'READY';
+  }
+
+  public getDiagnosticDetails(): AudioDiagnosticDetails {
+    const isSupported = typeof window !== 'undefined' && Boolean(window.AudioContext || (window as any).webkitAudioContext);
+    return {
+      isSupported,
+      state: !isSupported ? 'unsupported' : this.audioCtx ? this.audioCtx.state : 'uninitialized',
+      sampleRate: this.audioCtx ? this.audioCtx.sampleRate : null,
+      isPlayingSiren: this.isPlaying,
+      isBeepPlaying: this.isBeeping,
+      hasActiveContext: Boolean(this.audioCtx),
+      lastError: this.lastError,
+    };
   }
 }
 

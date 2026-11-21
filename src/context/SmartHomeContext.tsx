@@ -41,7 +41,7 @@ import {
   subscribeToSensorReadings,
   subscribeToDeviceStatus
 } from '../lib/supabaseClient';
-import { emergencySiren } from '../lib/emergencySound';
+import { emergencySiren, AudioDiagnosticStatus, AudioDiagnosticDetails } from '../lib/emergencySound';
 import { 
   insertAlertToSupabase,
   acknowledgeAlertInSupabase,
@@ -102,12 +102,18 @@ interface SmartHomeContextType {
   setExhaustSafetyCertified: (certified: boolean) => void;
   simulateSensorFault: () => void;
 
-  // Local Website Siren Test (Browser only)
+  // Local Website Siren & Speaker Diagnostic (Browser only)
   isAlarmTesting: boolean;
   alarmTestCountdown: number;
   alarmTestError: string | null;
   startAlarmTest: () => boolean;
   stopAlarmTest: () => void;
+  isSpeakerTesting: boolean;
+  speakerTestError: string | null;
+  playSpeakerTestBeep: () => Promise<boolean>;
+  stopAllTestAudio: () => void;
+  audioDiagnosticStatus: AudioDiagnosticStatus;
+  getAudioDiagnosticDetails: () => AudioDiagnosticDetails;
 
   // Additional Sensor and Device Alert Dispatchers
   triggerHighTempAlert: (temp?: number) => void;
@@ -389,6 +395,13 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [alarmTestError, setAlarmTestError] = useState<string | null>(null);
   const alarmTestTimerRef = useRef<any>(null);
   const alarmTestIntervalRef = useRef<any>(null);
+
+  // Diagnostic Speaker Test State (Purely client-side test chime & status)
+  const [isSpeakerTesting, setIsSpeakerTesting] = useState<boolean>(false);
+  const [speakerTestError, setSpeakerTestError] = useState<string | null>(null);
+  const [audioDiagnosticStatus, setAudioDiagnosticStatus] = useState<AudioDiagnosticStatus>(() => {
+    return emergencySiren.getDiagnosticStatus();
+  });
 
   // When in production or Supabase configured, always start unauthenticated.
   // Let getCurrentSession() be the authoritative source of truth.
@@ -760,6 +773,8 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           if (alarmTestIntervalRef.current) clearInterval(alarmTestIntervalRef.current);
           setIsAlarmTesting(false);
           setAlarmTestCountdown(0);
+          setIsSpeakerTesting(false);
+          emergencySiren.stopTestBeep();
 
           setIsGasEmergencyModalOpen(true);
           setIsSirenMuted(false);
@@ -851,6 +866,8 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           if (alarmTestIntervalRef.current) clearInterval(alarmTestIntervalRef.current);
           setIsAlarmTesting(false);
           setAlarmTestCountdown(0);
+          setIsSpeakerTesting(false);
+          emergencySiren.stopTestBeep();
 
           setIsGasEmergencyModalOpen(true);
           setIsSirenMuted(false);
@@ -1768,6 +1785,13 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }));
 
     // 4. Open full-screen emergency modal & start acoustic siren
+    if (alarmTestTimerRef.current) clearTimeout(alarmTestTimerRef.current);
+    if (alarmTestIntervalRef.current) clearInterval(alarmTestIntervalRef.current);
+    setIsAlarmTesting(false);
+    setAlarmTestCountdown(0);
+    setIsSpeakerTesting(false);
+    emergencySiren.stopTestBeep();
+
     setIsGasEmergencyModalOpen(true);
     setIsSirenMuted(false);
     emergencySiren.start();
@@ -2153,7 +2177,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, []);
 
   // =========================================================================
-  // Local Website TEST ALARM Functionality (Safe, Client-Side Sound Test)
+  // Local Website TEST ALARM & Speaker Diagnostic (Client-Side Audio Only)
   // =========================================================================
   const stopAlarmTest = useCallback(() => {
     if (alarmTestTimerRef.current) {
@@ -2177,6 +2201,33 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     if (!isRealEmergency) {
       emergencySiren.stop();
     }
+    setAudioDiagnosticStatus(emergencySiren.getDiagnosticStatus());
+  }, [telemetry.gasStatus, telemetry.gasRawAdc, gasSafetyState.lockoutStatus]);
+
+  const stopAllTestAudio = useCallback(() => {
+    if (alarmTestTimerRef.current) {
+      clearTimeout(alarmTestTimerRef.current);
+      alarmTestTimerRef.current = null;
+    }
+    if (alarmTestIntervalRef.current) {
+      clearInterval(alarmTestIntervalRef.current);
+      alarmTestIntervalRef.current = null;
+    }
+    setIsAlarmTesting(false);
+    setAlarmTestCountdown(0);
+    setIsSpeakerTesting(false);
+    emergencySiren.stopTestBeep();
+
+    const isRealEmergency =
+      telemetry.gasStatus === 'danger' ||
+      (telemetry.gasRawAdc != null && telemetry.gasRawAdc >= 1600) ||
+      gasSafetyState.lockoutStatus === 'CRITICAL' ||
+      gasSafetyState.lockoutStatus === 'EMERGENCY_LOCKOUT';
+
+    if (!isRealEmergency) {
+      emergencySiren.stop();
+    }
+    setAudioDiagnosticStatus(emergencySiren.getDiagnosticStatus());
   }, [telemetry.gasStatus, telemetry.gasRawAdc, gasSafetyState.lockoutStatus]);
 
   const startAlarmTest = useCallback((): boolean => {
@@ -2204,10 +2255,24 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     setAlarmTestError(null);
 
+    // Stop speaker test beep if playing
+    if (isSpeakerTesting) {
+      emergencySiren.stopTestBeep();
+      setIsSpeakerTesting(false);
+    }
+
     // 3. Activate acoustic siren via existing Web Audio API synthesizer
     try {
-      emergencySiren.start();
+      const started = emergencySiren.start();
+      if (!started) {
+        setAlarmTestError('Failed to start audio: Web Audio API suspended or blocked.');
+        setIsAlarmTesting(false);
+        setAlarmTestCountdown(0);
+        setAudioDiagnosticStatus(emergencySiren.getDiagnosticStatus());
+        return false;
+      }
       setIsAlarmTesting(true);
+      setAudioDiagnosticStatus('PLAYING');
       const DURATION_SECONDS = 7; // Configured duration between 5-10 seconds
       setAlarmTestCountdown(DURATION_SECONDS);
 
@@ -2232,9 +2297,55 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       setAlarmTestError(err?.message || 'Failed to activate browser audio. Check permissions.');
       setIsAlarmTesting(false);
       setAlarmTestCountdown(0);
+      setAudioDiagnosticStatus(emergencySiren.getDiagnosticStatus());
       return false;
     }
-  }, [telemetry.gasStatus, telemetry.gasRawAdc, gasSafetyState.lockoutStatus, gasSafetyState.gasClearedPendingReset, isAlarmTesting, stopAlarmTest]);
+  }, [telemetry.gasStatus, telemetry.gasRawAdc, gasSafetyState.lockoutStatus, gasSafetyState.gasClearedPendingReset, isAlarmTesting, isSpeakerTesting, stopAlarmTest]);
+
+  const playSpeakerTestBeep = useCallback(async (): Promise<boolean> => {
+    const isRealEmergency =
+      telemetry.gasStatus === 'danger' ||
+      (telemetry.gasRawAdc != null && telemetry.gasRawAdc >= 1600) ||
+      gasSafetyState.lockoutStatus === 'CRITICAL' ||
+      gasSafetyState.lockoutStatus === 'EMERGENCY_LOCKOUT' ||
+      gasSafetyState.lockoutStatus === 'LOCKOUT_PENDING_RESET' ||
+      gasSafetyState.gasClearedPendingReset;
+
+    if (isRealEmergency) {
+      setSpeakerTestError('Cannot test speaker: Real gas emergency or safety lockout is active!');
+      return false;
+    }
+
+    if (isSpeakerTesting) return true;
+
+    // Stop alarm test if it is running
+    if (isAlarmTesting) {
+      stopAlarmTest();
+    }
+
+    setSpeakerTestError(null);
+    setIsSpeakerTesting(true);
+    setAudioDiagnosticStatus('PLAYING');
+
+    const success = await emergencySiren.playTestBeep(880, 500);
+    if (!success) {
+      setSpeakerTestError('Speaker test failed. Browser autoplay restriction may require a direct click.');
+      setIsSpeakerTesting(false);
+      setAudioDiagnosticStatus(emergencySiren.getDiagnosticStatus());
+      return false;
+    }
+
+    setTimeout(() => {
+      setIsSpeakerTesting(false);
+      setAudioDiagnosticStatus(emergencySiren.getDiagnosticStatus());
+    }, 550);
+
+    return true;
+  }, [telemetry.gasStatus, telemetry.gasRawAdc, gasSafetyState.lockoutStatus, gasSafetyState.gasClearedPendingReset, isSpeakerTesting, isAlarmTesting, stopAlarmTest]);
+
+  const getAudioDiagnosticDetails = useCallback((): AudioDiagnosticDetails => {
+    return emergencySiren.getDiagnosticDetails();
+  }, []);
 
   // Clean up timers & stop test siren when context unmounts
   useEffect(() => {
@@ -2839,6 +2950,12 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     alarmTestError,
     startAlarmTest,
     stopAlarmTest,
+    isSpeakerTesting,
+    speakerTestError,
+    playSpeakerTestBeep,
+    stopAllTestAudio,
+    audioDiagnosticStatus,
+    getAudioDiagnosticDetails,
     triggerHighTempAlert,
     triggerSensorDisconnectedAlert,
     triggerInvalidReadingAlert,
@@ -2909,6 +3026,12 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     alarmTestError,
     startAlarmTest,
     stopAlarmTest,
+    isSpeakerTesting,
+    speakerTestError,
+    playSpeakerTestBeep,
+    stopAllTestAudio,
+    audioDiagnosticStatus,
+    getAudioDiagnosticDetails,
     triggerHighTempAlert,
     triggerSensorDisconnectedAlert,
     triggerInvalidReadingAlert,

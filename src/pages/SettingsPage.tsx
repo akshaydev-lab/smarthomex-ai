@@ -20,6 +20,7 @@ import { useSmartHome } from '../hooks/useSmartHome';
 import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
+import { SpeakerDiagnosticCard } from '../components/audio/SpeakerDiagnosticCard';
 import { getSupabaseConfig, getSupabaseClient } from '../lib/supabaseClient';
 
 export const SettingsPage: React.FC = () => {
@@ -555,7 +556,10 @@ export const SettingsPage: React.FC = () => {
           </div>
         </Card>
 
-        {/* Section 4: Supabase Cloud Readiness */}
+        {/* Section 4: Speaker & Emergency Audio Diagnostics */}
+        <SpeakerDiagnosticCard />
+
+        {/* Section 5: Supabase Cloud Readiness */}
         <Card className="p-5">
           <div className="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
             <div className="flex items-center gap-2">

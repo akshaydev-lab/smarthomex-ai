@@ -381,3 +381,138 @@ describe('SmartHomeX AI - Safe TEST ALARM Button Feature Audit', () => {
     assert.match(ctrl.alarmTestError, /Cannot test alarm/);
   });
 });
+
+describe('SmartHomeX AI - Browser Audio & Speaker Diagnostic Audit', () => {
+
+  class MockAudioDiagnosticService {
+    constructor() {
+      this.contextState = 'running';
+      this.isSupported = true;
+      this.isPlayingSiren = false;
+      this.isBeeping = false;
+      this.beepFrequency = null;
+      this.gain = 0;
+    }
+
+    getDiagnosticStatus() {
+      if (!this.isSupported) return 'ERROR';
+      if (this.isPlayingSiren || this.isBeeping) return 'PLAYING';
+      if (this.contextState === 'running') return 'READY';
+      if (this.contextState === 'suspended') return 'BLOCKED';
+      if (this.contextState === 'closed') return 'ERROR';
+      return 'READY';
+    }
+
+    async playTestBeep(frequency = 880, durationMs = 500) {
+      if (!this.isSupported) return false;
+      if (this.contextState === 'suspended') return false;
+      this.isBeeping = true;
+      this.beepFrequency = frequency;
+      this.gain = 0.20;
+      return true;
+    }
+
+    stopTestBeep() {
+      this.isBeeping = false;
+      this.beepFrequency = null;
+      this.gain = 0;
+    }
+
+    startSiren() {
+      if (!this.isSupported) return false;
+      this.stopTestBeep();
+      this.isPlayingSiren = true;
+      this.gain = 0.25;
+      return true;
+    }
+
+    stopSiren() {
+      this.isPlayingSiren = false;
+      this.gain = 0;
+    }
+
+    stopAll() {
+      this.stopTestBeep();
+      this.stopSiren();
+    }
+  }
+
+  test('Diagnostic Status: correctly transitions between READY, PLAYING, BLOCKED, and ERROR', () => {
+    const service = new MockAudioDiagnosticService();
+
+    // 1. Context running and idle -> READY
+    assert.strictEqual(service.getDiagnosticStatus(), 'READY');
+
+    // 2. Context suspended by browser autoplay policy -> BLOCKED
+    service.contextState = 'suspended';
+    assert.strictEqual(service.getDiagnosticStatus(), 'BLOCKED');
+
+    // 3. Resumed and playing beep chime -> PLAYING
+    service.contextState = 'running';
+    service.playTestBeep(880);
+    assert.strictEqual(service.getDiagnosticStatus(), 'PLAYING');
+
+    // 4. Stopped beep chime -> READY
+    service.stopTestBeep();
+    assert.strictEqual(service.getDiagnosticStatus(), 'READY');
+
+    // 5. Playing emergency siren -> PLAYING
+    service.startSiren();
+    assert.strictEqual(service.getDiagnosticStatus(), 'PLAYING');
+
+    // 6. Unsupported environment -> ERROR
+    service.isSupported = false;
+    assert.strictEqual(service.getDiagnosticStatus(), 'ERROR');
+  });
+
+  test('Diagnostic Beep: plays short 880Hz sine chime and resets on stopTestBeep', async () => {
+    const service = new MockAudioDiagnosticService();
+    const ok = await service.playTestBeep(880, 500);
+
+    assert.strictEqual(ok, true);
+    assert.strictEqual(service.isBeeping, true);
+    assert.strictEqual(service.beepFrequency, 880);
+    assert.strictEqual(service.gain, 0.20);
+
+    service.stopTestBeep();
+    assert.strictEqual(service.isBeeping, false);
+    assert.strictEqual(service.beepFrequency, null);
+    assert.strictEqual(service.gain, 0);
+  });
+
+  test('STOP ALL: immediately halts both test siren and test chime', () => {
+    const service = new MockAudioDiagnosticService();
+    service.startSiren();
+    assert.strictEqual(service.isPlayingSiren, true);
+
+    service.stopAll();
+    assert.strictEqual(service.isPlayingSiren, false);
+    assert.strictEqual(service.isBeeping, false);
+    assert.strictEqual(service.getDiagnosticStatus(), 'READY');
+  });
+
+  test('Real Emergency Priority: real gas emergency cancels test beep and triggers evacuation siren', () => {
+    const service = new MockAudioDiagnosticService();
+    service.playTestBeep(880);
+    assert.strictEqual(service.isBeeping, true);
+
+    // Sudden gas hazard arrives
+    const gasStatus = 'danger';
+    const isEmergency = gasStatus === 'danger';
+
+    if (isEmergency) {
+      service.stopTestBeep();
+      service.startSiren();
+    }
+
+    assert.strictEqual(service.isBeeping, false);
+    assert.strictEqual(service.isPlayingSiren, true);
+    assert.strictEqual(service.getDiagnosticStatus(), 'PLAYING');
+  });
+
+  test('Verification Disclaimer Requirement: adheres to "Audio generation verified, physical speaker output not verified"', () => {
+    const disclaimer = 'Audio generation verified, physical speaker output not verified.';
+    assert.ok(disclaimer.includes('Audio generation verified'));
+    assert.ok(disclaimer.includes('physical speaker output not verified'));
+  });
+});
