@@ -25,7 +25,12 @@ export const GasSensorCard: React.FC<{ telemetry: SensorTelemetry }> = ({ teleme
     toggleSirenMute, 
     triggerGasLeakAlert,
     simulateGasClearance,
-    simulateSensorFault
+    simulateSensorFault,
+    isAlarmTesting,
+    alarmTestCountdown,
+    alarmTestError,
+    startAlarmTest,
+    stopAlarmTest
   } = useSmartHome();
 
   const rawAdc = telemetry.gasRawAdc ?? gasSafetyState.rawAdc ?? null;
@@ -256,47 +261,113 @@ export const GasSensorCard: React.FC<{ telemetry: SensorTelemetry }> = ({ teleme
         <div className={`p-3.5 rounded-xl border transition-all ${
           isDanger
             ? 'bg-rose-950/30 border-rose-500/50'
+            : isAlarmTesting
+            ? 'bg-gradient-to-br from-orange-950/50 via-slate-900 to-rose-950/40 border-orange-500/60 shadow-[0_0_25px_rgba(249,115,22,0.35)]'
             : 'bg-slate-950/70 border-slate-800'
         }`}>
           <div className="flex items-center justify-between mb-1">
             <span className="text-xs font-mono text-slate-400 flex items-center gap-1.5">
-              <Volume2 className="h-3.5 w-3.5 text-rose-400" /> Warning Siren
+              <Volume2 className={`h-3.5 w-3.5 ${isAlarmTesting ? 'text-orange-400 animate-bounce' : 'text-rose-400'}`} /> Warning Siren
             </span>
             <span className="text-[10px] font-mono text-slate-400">960Hz Alert</span>
           </div>
-          <div className="mt-2 flex items-center justify-between">
+          <div className="mt-2 flex items-center justify-between gap-2">
             <div>
               <span className={`text-sm font-bold block ${
-                isDanger ? (isSirenMuted ? 'MUTED' : 'PULSING SIREN') : isOffline ? 'OFFLINE' : 'STANDBY'
+                isDanger
+                  ? (isSirenMuted ? 'MUTED' : 'PULSING SIREN')
+                  : isAlarmTesting
+                  ? 'text-orange-300 animate-pulse'
+                  : isOffline
+                  ? 'OFFLINE'
+                  : 'STANDBY'
               }`}>
-                {isDanger ? (isSirenMuted ? 'MUTED' : 'PULSING SIREN') : isOffline ? 'OFFLINE' : 'ARMED / SILENT'}
+                {isDanger
+                  ? (isSirenMuted ? 'MUTED' : 'PULSING SIREN')
+                  : isAlarmTesting
+                  ? `TEST ALARM ACTIVE (${alarmTestCountdown}s)`
+                  : isOffline
+                  ? 'OFFLINE'
+                  : 'ARMED / SILENT'}
               </span>
               <span className="text-[11px] text-slate-400">
-                {isDanger ? 'Dual-tone acoustic siren active' : isOffline ? 'ESP32 disconnected' : 'Continuous acoustic monitor'}
+                {isDanger
+                  ? 'Dual-tone acoustic siren active'
+                  : isAlarmTesting
+                  ? 'Local browser siren test in progress'
+                  : isOffline
+                  ? 'ESP32 disconnected'
+                  : 'Continuous acoustic monitor'}
               </span>
             </div>
-            <button
-              onClick={isDanger ? toggleSirenMute : undefined}
-              className={`h-8 w-8 rounded-lg flex items-center justify-center border transition-all ${
-                isDanger
-                  ? isSirenMuted
-                    ? 'bg-slate-800 border-slate-700 text-slate-400 cursor-pointer'
-                    : 'bg-rose-500/25 border-rose-500 text-rose-300 animate-pulse cursor-pointer'
-                  : 'bg-slate-900 border-slate-800 text-slate-500 cursor-default'
-              }`}
-              title={isDanger ? (isSirenMuted ? 'Unmute Siren' : 'Mute Siren') : 'Siren Armed / Standby'}
-            >
-              {isDanger && isSirenMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
-            </button>
+            <div className="flex items-center gap-2">
+              {isDanger && (
+                <button
+                  onClick={toggleSirenMute}
+                  className={`h-8 w-8 rounded-lg flex items-center justify-center border transition-all ${
+                    isSirenMuted
+                      ? 'bg-slate-800 border-slate-700 text-slate-400 cursor-pointer'
+                      : 'bg-rose-500/25 border-rose-500 text-rose-300 animate-pulse cursor-pointer'
+                  }`}
+                  title={isSirenMuted ? 'Unmute Siren' : 'Mute Siren'}
+                >
+                  {isSirenMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                </button>
+              )}
+
+              {/* TEST ALARM / STOP TEST BUTTON */}
+              {!isDanger && (
+                <button
+                  type="button"
+                  onClick={isAlarmTesting ? stopAlarmTest : startAlarmTest}
+                  disabled={isClearedPendingReset}
+                  title="Test your website emergency siren without triggering hardware."
+                  className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer ${
+                    isAlarmTesting
+                      ? 'bg-rose-600 hover:bg-rose-700 text-white border-rose-400 shadow-glow-danger animate-pulse'
+                      : isClearedPendingReset
+                      ? 'bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed'
+                      : 'bg-gradient-to-r from-orange-600/30 to-rose-600/30 hover:from-orange-600/50 hover:to-rose-600/50 text-rose-200 border-rose-500/50 hover:border-rose-400'
+                  }`}
+                >
+                  {isAlarmTesting ? (
+                    <>
+                      <VolumeX className="h-3.5 w-3.5 text-white" />
+                      <span>STOP TEST</span>
+                    </>
+                  ) : (
+                    <>
+                      <Volume2 className="h-3.5 w-3.5 text-orange-400" />
+                      <span>TEST ALARM</span>
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
 
+      {alarmTestError && (
+        <div className="mt-3 p-2.5 rounded-xl bg-rose-950/60 border border-rose-500/50 text-xs text-rose-300 flex items-center justify-between">
+          <span>⚠️ {alarmTestError}</span>
+        </div>
+      )}
+
       {/* Safety Notice & Fast Diagnostic Test Strip */}
       <div className="mt-4 pt-3 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-xs text-slate-400 font-mono">
+        <div className="flex items-center gap-2 text-xs text-slate-400 font-mono flex-wrap">
           <Activity className="h-4 w-4 text-cyan-400" />
           <span>Trip Threshold: 350 Indicative Index • Hysteresis: 200 Index</span>
+          {isAlarmTesting && (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-orange-950/90 border border-orange-500/50 text-orange-300 font-bold text-[11px] animate-pulse">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
+              </span>
+              TEST ALARM ACTIVE ({alarmTestCountdown}s remaining)
+            </span>
+          )}
         </div>
 
         {/* Quick Testing Actions (Development & Demo only) */}

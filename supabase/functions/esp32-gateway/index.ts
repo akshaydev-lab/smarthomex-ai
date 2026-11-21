@@ -261,7 +261,13 @@ serve(async (req: Request) => {
         device_slug,
       } = payload;
 
-      const sanitizedGasPpm = gas_ppm != null ? Number(gas_ppm) : null;
+      const parseNumeric = (val: unknown): number | null => {
+        if (val === null || val === undefined || val === '') return null;
+        const num = Number(val);
+        return Number.isFinite(num) ? num : null;
+      };
+
+      const sanitizedGasPpm = parseNumeric(gas_ppm);
       const validatedGasRawAdc = parseAdcReading(gas_raw_adc);
       
       // Preserve incoming sensor state. NEVER silently convert warming_up or sensor_fault into safe!
@@ -273,6 +279,18 @@ serve(async (req: Request) => {
       } else {
         // If missing or unverified, report as warning rather than falsely claiming safe
         sanitizedGasStatus = 'warning';
+      }
+
+      // Sanitize electrical anomaly classification according to schema check constraint allowlist
+      const ALLOWED_ANOMALIES = ['normal', 'overcurrent', 'overpower', 'voltage_sag', 'voltage_surge', 'sensor_fault'];
+      let sanitizedAnomaly = 'normal';
+      if (typeof anomaly === 'string') {
+        const normalized = anomaly.trim().toLowerCase();
+        if (ALLOWED_ANOMALIES.includes(normalized)) {
+          sanitizedAnomaly = normalized;
+        }
+      } else if (payload.ina219_fault === true) {
+        sanitizedAnomaly = 'sensor_fault';
       }
 
       // Resolve the controller's registered devices by home_id and user_id
@@ -302,18 +320,18 @@ serve(async (req: Request) => {
           home_id: authenticatedHomeId,
           user_id: authenticatedUserId,
           device_id: telemetryDeviceId,
-          bus_voltage_v: bus_voltage_v != null ? Number(bus_voltage_v) : null,
-          shunt_voltage_mv: shunt_voltage_mv != null ? Number(shunt_voltage_mv) : null,
-          current_ma: current_ma != null ? Number(current_ma) : null,
-          current_a: current_a != null ? Number(current_a) : null,
-          power_w: power_w != null ? Number(power_w) : null,
-          energy_wh: energy_wh != null ? Number(energy_wh) : null,
-          temperature_c: temperature_c != null ? Number(temperature_c) : null,
-          humidity_pct: humidity_pct != null ? Number(humidity_pct) : null,
+          bus_voltage_v: parseNumeric(bus_voltage_v),
+          shunt_voltage_mv: parseNumeric(shunt_voltage_mv),
+          current_ma: parseNumeric(current_ma),
+          current_a: parseNumeric(current_a),
+          power_w: parseNumeric(power_w),
+          energy_wh: parseNumeric(energy_wh),
+          temperature_c: parseNumeric(temperature_c),
+          humidity_pct: parseNumeric(humidity_pct),
           gas_ppm: sanitizedGasPpm,
           gas_raw_adc: validatedGasRawAdc,
           gas_status: sanitizedGasStatus,
-          anomaly: anomaly || 'normal',
+          anomaly: sanitizedAnomaly,
           is_demo: false,
           recorded_at: new Date().toISOString(),
         })
@@ -1088,8 +1106,8 @@ serve(async (req: Request) => {
       }
 
       // 5. Verification Passed: Differentiate Physical Button vs Remote Dashboard Reset
-      if (resetSource === 'physical_button_gpio0') {
-        // Physical Button on GPIO 0 was pressed: ESP32 hardware already verified clean air locally
+      if (resetSource === 'physical_button_gpio0' || resetSource === 'physical_button_gpio13') {
+        // Physical Button on GPIO 0 or GPIO 13 was pressed: ESP32 hardware already verified clean air locally
         // and cleared local lockout variables prior to reporting this event.
         const resolvedAt = new Date().toISOString();
 
@@ -1119,7 +1137,7 @@ serve(async (req: Request) => {
           severity: 'info',
           emergency_status: 'RESOLVED',
           title: 'Physical Safety Reset Completed – Normal Operation Restored',
-          description: `Atmosphere independently verified safe (< 900 ADC, latest reading: ${currentAdc} ADC). System lockout disarmed and main contactor restored via physical button on GPIO 0. Relays remain OFF until commanded.`,
+          description: `Atmosphere independently verified safe (< 900 ADC, latest reading: ${currentAdc} ADC). System lockout disarmed and main contactor restored via physical button on ${resetSource === 'physical_button_gpio13' ? 'GPIO 13' : 'GPIO 0'}. Relays remain OFF until commanded.`,
           acknowledged: true,
           resolved_at: resolvedAt,
           is_demo: false,

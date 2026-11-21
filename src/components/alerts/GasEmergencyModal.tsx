@@ -52,6 +52,7 @@ export const GasEmergencyModal: React.FC = () => {
 
   const isEmergencyActive = 
     telemetry.gasStatus === 'danger' || 
+    (telemetry.gasRawAdc != null && telemetry.gasRawAdc >= 1600) ||
     gasSafetyState.lockoutStatus === 'CRITICAL' || 
     gasSafetyState.lockoutStatus === 'SILENCED' || 
     gasSafetyState.lockoutStatus === 'LOCKOUT_PENDING_RESET' ||
@@ -64,7 +65,10 @@ export const GasEmergencyModal: React.FC = () => {
 
   const isSilenced = gasSafetyState.lockoutStatus === 'SILENCED' || gasSafetyState.isMobileSirenSilenced;
   const isClearedPendingReset = gasSafetyState.gasClearedPendingReset || gasSafetyState.lockoutStatus === 'LOCKOUT_PENDING_RESET';
-  const isGasHazardPresent = telemetry.gasStatus === 'danger' || Boolean(gasSafetyState.rawAdc && gasSafetyState.rawAdc >= 1200);
+  const isGasHazardPresent =
+    telemetry.gasStatus === 'danger' ||
+    Boolean(gasSafetyState.rawAdc && gasSafetyState.rawAdc >= 1200) ||
+    Boolean(telemetry.gasRawAdc && telemetry.gasRawAdc >= 1200);
 
   const handleExecuteSafetyReset = async () => {
     if (isGasHazardPresent) {

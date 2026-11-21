@@ -30,9 +30,9 @@ export const INA219MetricsCards: React.FC = () => {
   // Bus Voltage status
   const getVoltageStatus = (v?: number | null) => {
     if (v == null || isNaN(v)) return { text: 'FAULT / NO DATA', color: 'slate' as const, note: 'INA219 Disconnected' };
-    if (v < 215) return { text: 'VOLTAGE SAG', color: 'rose' as const, note: 'Under-voltage alert' };
-    if (v > 245) return { text: 'VOLTAGE SURGE', color: 'rose' as const, note: 'Over-voltage transient' };
-    return { text: 'GRID STABLE', color: 'cyan' as const, note: 'Nominal 220-240V AC' };
+    if (v < 10.0) return { text: 'VOLTAGE SAG', color: 'rose' as const, note: 'Under-voltage (< 10V DC)' };
+    if (v > 14.5) return { text: 'VOLTAGE SURGE', color: 'rose' as const, note: 'Over-voltage (> 14.5V DC)' };
+    return { text: '12V NOMINAL', color: 'cyan' as const, note: 'Nominal 12V DC Rail' };
   };
 
   const vStatus = getVoltageStatus(telemetry.voltage);
@@ -54,7 +54,7 @@ export const INA219MetricsCards: React.FC = () => {
         <div className="flex items-center justify-between text-slate-400 mb-2">
           <span className="text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5">
             <Activity className="h-3.5 w-3.5 text-cyan-400" />
-            Bus Voltage
+            DC Supply Voltage
           </span>
           <Badge variant={vStatus.color} size="sm">{vStatus.text}</Badge>
         </div>

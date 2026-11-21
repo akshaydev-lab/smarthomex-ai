@@ -121,20 +121,20 @@ export const SensorsPage: React.FC = () => {
           isRealHardware={telemetry.isHardwareConnected}
         />
 
-        {/* Sensor 3: Mains Voltage */}
+        {/* Sensor 3: DC Supply Voltage */}
         <SensorGauge
-          title="Bus Voltage"
+          title="DC Supply Voltage"
           value={telemetry.voltage}
           unit="V"
           sensorModel="INA219 Power Monitor"
           pinInfo="I2C SDA: 21, SCL: 22"
           icon={<Activity className="h-5 w-5" />}
-          min={210}
-          max={250}
+          min={0}
+          max={16}
           currentValue={telemetry.voltage}
           accentColor="cyan"
-          statusText={telemetry.voltage == null ? 'FAULT / DISCONNECTED' : 'GRID STABLE'}
-          subtitle="Monitored supply voltage for inductive surges."
+          statusText={telemetry.voltage == null ? 'FAULT / DISCONNECTED' : telemetry.voltage < 10.0 ? 'VOLTAGE SAG' : telemetry.voltage > 14.5 ? 'VOLTAGE SURGE' : '12V NOMINAL'}
+          subtitle="Monitored 12V DC supply rail for motor load & inductive transients."
           isRealHardware={telemetry.isHardwareConnected}
         />
 

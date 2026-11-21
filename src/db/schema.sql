@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS public.sensor_readings (
   gas_ppm NUMERIC(6,1), -- Indicative relative gas index (MQ-2 uncalibrated analog estimate, not certified laboratory PPM)
   gas_raw_adc INT, -- MQ-2 Raw 12-bit ADC (0 - 4095) from ESP32 GPIO 34
   gas_status TEXT CHECK (gas_status IN ('safe', 'warning', 'danger', 'warming_up', 'sensor_fault')) DEFAULT 'warming_up',
-  anomaly TEXT CHECK (anomaly IN ('normal', 'overcurrent', 'overpower', 'voltage_sag', 'voltage_surge')) DEFAULT 'normal',
+  anomaly TEXT CHECK (anomaly IN ('normal', 'overcurrent', 'overpower', 'voltage_sag', 'voltage_surge', 'sensor_fault')) DEFAULT 'normal',
   is_demo BOOLEAN NOT NULL DEFAULT true,
   recorded_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

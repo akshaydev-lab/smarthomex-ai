@@ -151,7 +151,7 @@ export interface INA219Reading {
   energyWh: number | null;
   energyKWh: number | null;
   isDemo: boolean;
-  anomaly?: 'overcurrent' | 'overpower' | 'voltage_sag' | 'voltage_surge' | 'normal';
+  anomaly?: 'overcurrent' | 'overpower' | 'voltage_sag' | 'voltage_surge' | 'normal' | 'sensor_fault';
 }
 
 export interface EnergyMonthlyData {

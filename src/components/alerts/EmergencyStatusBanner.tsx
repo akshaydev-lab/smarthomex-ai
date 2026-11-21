@@ -16,6 +16,7 @@ export const EmergencyStatusBanner: React.FC = () => {
 
   const isEmergencyActive = 
     telemetry.gasStatus === 'danger' || 
+    (telemetry.gasRawAdc != null && telemetry.gasRawAdc >= 1600) ||
     gasSafetyState.lockoutStatus === 'CRITICAL' || 
     gasSafetyState.lockoutStatus === 'SILENCED' || 
     gasSafetyState.lockoutStatus === 'LOCKOUT_PENDING_RESET' ||

@@ -22,7 +22,7 @@ export const Header: React.FC<{ onMenuToggle: () => void }> = ({ onMenuToggle })
     currentPage, 
     setCurrentPage, 
     telemetry, 
-    totalActiveWatts, 
+    gasSafetyState,
     alerts, 
     acknowledgeAlert, 
     triggerGasLeakAlert,
@@ -106,7 +106,7 @@ export const Header: React.FC<{ onMenuToggle: () => void }> = ({ onMenuToggle })
           </div>
 
           {/* Emergency Alert Indicator or Trigger Simulator */}
-          {telemetry.gasStatus === 'danger' ? (
+          {telemetry.gasStatus === 'danger' || (telemetry.gasRawAdc != null && telemetry.gasRawAdc >= 1600) || gasSafetyState.lockoutStatus === 'CRITICAL' ? (
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setIsGasEmergencyModalOpen(true)}

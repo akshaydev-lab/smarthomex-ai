@@ -3,6 +3,7 @@ import {
   Settings, 
   Cpu, 
   Volume2, 
+  VolumeX, 
   ShieldAlert, 
   Database, 
   Save, 
@@ -22,7 +23,19 @@ import { Button } from '../components/common/Button';
 import { getSupabaseConfig, getSupabaseClient } from '../lib/supabaseClient';
 
 export const SettingsPage: React.FC = () => {
-  const { settings, updateSettings, isAuthenticated, user, setCurrentPage } = useSmartHome();
+  const { 
+    settings, 
+    updateSettings, 
+    isAuthenticated, 
+    user, 
+    setCurrentPage,
+    telemetry,
+    gasSafetyState,
+    isAlarmTesting,
+    alarmTestCountdown,
+    startAlarmTest,
+    stopAlarmTest
+  } = useSmartHome();
   const [formData, setFormData] = useState({ ...settings });
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [mqttTesting, setMqttTesting] = useState(false);
@@ -508,6 +521,37 @@ export const SettingsPage: React.FC = () => {
                 />
               </div>
             )}
+
+            {/* Emergency Siren Audio Test */}
+            <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 flex items-center justify-between col-span-1 md:col-span-2">
+              <div>
+                <span className="font-semibold text-slate-200 block">Website Emergency Siren Audio Test</span>
+                <span className="text-[11px] text-slate-400">Audibly test browser acoustic siren (960Hz / 770Hz) without triggering hardware or creating DB alerts</span>
+              </div>
+              <button
+                type="button"
+                onClick={isAlarmTesting ? stopAlarmTest : startAlarmTest}
+                disabled={telemetry.gasStatus === 'danger' || gasSafetyState.lockoutStatus === 'CRITICAL'}
+                title="Test your website emergency siren without triggering hardware."
+                className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer ${
+                  isAlarmTesting
+                    ? 'bg-rose-600 hover:bg-rose-700 text-white border-rose-400 shadow-glow-danger animate-pulse'
+                    : 'bg-gradient-to-r from-orange-600/30 to-rose-600/30 hover:from-orange-600/50 hover:to-rose-600/50 text-rose-200 border-rose-500/50 hover:border-rose-400'
+                }`}
+              >
+                {isAlarmTesting ? (
+                  <>
+                    <VolumeX className="h-4 w-4 text-white" />
+                    <span>STOP TEST ({alarmTestCountdown}s)</span>
+                  </>
+                ) : (
+                  <>
+                    <Volume2 className="h-4 w-4 text-orange-400" />
+                    <span>TEST ALARM</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </Card>
 

@@ -75,10 +75,10 @@ export const OverviewPage: React.FC = () => {
           </span>
         </Card>
 
-        {/* Metric 3: Mains Voltage */}
+        {/* Metric 3: DC Supply Voltage */}
         <Card className="p-3.5">
           <div className="flex items-center justify-between text-slate-400 mb-2">
-            <span className="text-xs font-semibold">Mains Voltage</span>
+            <span className="text-xs font-semibold">DC Supply Voltage</span>
             <Activity className="h-4 w-4 text-blue-400" />
           </div>
           <div className="text-2xl font-bold font-mono text-slate-100">

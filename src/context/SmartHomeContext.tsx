@@ -102,6 +102,13 @@ interface SmartHomeContextType {
   setExhaustSafetyCertified: (certified: boolean) => void;
   simulateSensorFault: () => void;
 
+  // Local Website Siren Test (Browser only)
+  isAlarmTesting: boolean;
+  alarmTestCountdown: number;
+  alarmTestError: string | null;
+  startAlarmTest: () => boolean;
+  stopAlarmTest: () => void;
+
   // Additional Sensor and Device Alert Dispatchers
   triggerHighTempAlert: (temp?: number) => void;
   triggerSensorDisconnectedAlert: (sensor: 'mq2' | 'dht11') => void;
@@ -376,6 +383,13 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return 'unsupported';
   });
 
+  // Local Website Siren Test State (Purely client-side, zero hardware/DB commands)
+  const [isAlarmTesting, setIsAlarmTesting] = useState<boolean>(false);
+  const [alarmTestCountdown, setAlarmTestCountdown] = useState<number>(0);
+  const [alarmTestError, setAlarmTestError] = useState<string | null>(null);
+  const alarmTestTimerRef = useRef<any>(null);
+  const alarmTestIntervalRef = useRef<any>(null);
+
   // When in production or Supabase configured, always start unauthenticated.
   // Let getCurrentSession() be the authoritative source of truth.
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -500,8 +514,20 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             isHardwareConnected: isLive && !remoteTelemetry.is_demo,
           }));
 
-          if (isFreshTelemetry && remoteTelemetry.gas_status === 'danger' && !remoteTelemetry.is_demo) {
+          const isDangerReading =
+            isFreshTelemetry &&
+            !remoteTelemetry.is_demo &&
+            (remoteTelemetry.gas_status === 'danger' || (rawAdcHydrated != null && rawAdcHydrated >= 1600));
+
+          if (isDangerReading) {
+            if (alarmTestTimerRef.current) clearTimeout(alarmTestTimerRef.current);
+            if (alarmTestIntervalRef.current) clearInterval(alarmTestIntervalRef.current);
+            setIsAlarmTesting(false);
+            setAlarmTestCountdown(0);
+
             setIsGasEmergencyModalOpen(true);
+            setIsSirenMuted(false);
+            emergencySiren.start();
             setGasSafetyState(prev => ({
               ...prev,
               lockoutStatus: 'CRITICAL',
@@ -730,6 +756,11 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const isRealAlert = !row.is_demo;
         const isResolved = Boolean(row.resolved_at) || row.emergency_status === 'RESOLVED' || row.emergency_status === 'NORMAL';
         if (row.type === 'gas_leak' && row.severity === 'danger' && isRealAlert && !isResolved) {
+          if (alarmTestTimerRef.current) clearTimeout(alarmTestTimerRef.current);
+          if (alarmTestIntervalRef.current) clearInterval(alarmTestIntervalRef.current);
+          setIsAlarmTesting(false);
+          setAlarmTestCountdown(0);
+
           setIsGasEmergencyModalOpen(true);
           setIsSirenMuted(false);
           emergencySiren.start();
@@ -813,8 +844,14 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           isHardwareConnected: true,
         }));
 
-        // Tasks 3 & 4: Immediately update safety state & interlocks based on gas_status
-        if (newGasStatus === 'danger') {
+        // Tasks 3 & 4: Immediately update safety state & interlocks based on gas_status & gas_raw_adc
+        const isRealtimeDanger = newGasStatus === 'danger' || (rawAdcVal != null && rawAdcVal >= 1600);
+        if (isRealtimeDanger) {
+          if (alarmTestTimerRef.current) clearTimeout(alarmTestTimerRef.current);
+          if (alarmTestIntervalRef.current) clearInterval(alarmTestIntervalRef.current);
+          setIsAlarmTesting(false);
+          setAlarmTestCountdown(0);
+
           setIsGasEmergencyModalOpen(true);
           setIsSirenMuted(false);
           emergencySiren.start();
@@ -865,12 +902,14 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           setGasSafetyState(prev => {
             if (prev.lockoutStatus === 'CRITICAL' || prev.lockoutStatus === 'EMERGENCY_LOCKOUT') {
               // Gas cleared below trip threshold while in lockout -> Transition to LOCKOUT_PENDING_RESET
-              // Circuits and contactor remain TRIPPED until verified manual safety reset!
+              // Stop acoustic evacuation siren per recovery logic while preserving contactor trip & lockout!
+              emergencySiren.stop();
               return {
                 ...prev,
                 lockoutStatus: 'LOCKOUT_PENDING_RESET',
                 gasClearedPendingReset: true,
                 mainContactorTripped: true,
+                buzzerActive: false,
                 rawAdc: rawAdcVal ?? prev.rawAdc,
               };
             }
@@ -2113,6 +2152,98 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setAlerts(prev => [alert, ...prev]);
   }, []);
 
+  // =========================================================================
+  // Local Website TEST ALARM Functionality (Safe, Client-Side Sound Test)
+  // =========================================================================
+  const stopAlarmTest = useCallback(() => {
+    if (alarmTestTimerRef.current) {
+      clearTimeout(alarmTestTimerRef.current);
+      alarmTestTimerRef.current = null;
+    }
+    if (alarmTestIntervalRef.current) {
+      clearInterval(alarmTestIntervalRef.current);
+      alarmTestIntervalRef.current = null;
+    }
+    setIsAlarmTesting(false);
+    setAlarmTestCountdown(0);
+
+    // Stop siren ONLY if a real gas emergency or lockout is NOT active!
+    const isRealEmergency =
+      telemetry.gasStatus === 'danger' ||
+      (telemetry.gasRawAdc != null && telemetry.gasRawAdc >= 1600) ||
+      gasSafetyState.lockoutStatus === 'CRITICAL' ||
+      gasSafetyState.lockoutStatus === 'EMERGENCY_LOCKOUT';
+
+    if (!isRealEmergency) {
+      emergencySiren.stop();
+    }
+  }, [telemetry.gasStatus, telemetry.gasRawAdc, gasSafetyState.lockoutStatus]);
+
+  const startAlarmTest = useCallback((): boolean => {
+    // 1. Strict Real Emergency Priority Check: Cannot test while real hazard exists
+    const isRealEmergency =
+      telemetry.gasStatus === 'danger' ||
+      (telemetry.gasRawAdc != null && telemetry.gasRawAdc >= 1600) ||
+      gasSafetyState.lockoutStatus === 'CRITICAL' ||
+      gasSafetyState.lockoutStatus === 'EMERGENCY_LOCKOUT' ||
+      gasSafetyState.lockoutStatus === 'LOCKOUT_PENDING_RESET' ||
+      gasSafetyState.gasClearedPendingReset;
+
+    if (isRealEmergency) {
+      setAlarmTestError('Cannot test alarm: Real gas emergency or safety lockout is active!');
+      return false;
+    }
+
+    // 2. Prevent multiple simultaneous test instances
+    if (isAlarmTesting) {
+      return true;
+    }
+
+    if (alarmTestTimerRef.current) clearTimeout(alarmTestTimerRef.current);
+    if (alarmTestIntervalRef.current) clearInterval(alarmTestIntervalRef.current);
+
+    setAlarmTestError(null);
+
+    // 3. Activate acoustic siren via existing Web Audio API synthesizer
+    try {
+      emergencySiren.start();
+      setIsAlarmTesting(true);
+      const DURATION_SECONDS = 7; // Configured duration between 5-10 seconds
+      setAlarmTestCountdown(DURATION_SECONDS);
+
+      let remaining = DURATION_SECONDS;
+      alarmTestIntervalRef.current = setInterval(() => {
+        remaining -= 1;
+        setAlarmTestCountdown(remaining);
+        if (remaining <= 0) {
+          if (alarmTestIntervalRef.current) {
+            clearInterval(alarmTestIntervalRef.current);
+            alarmTestIntervalRef.current = null;
+          }
+        }
+      }, 1000);
+
+      alarmTestTimerRef.current = setTimeout(() => {
+        stopAlarmTest();
+      }, DURATION_SECONDS * 1000);
+
+      return true;
+    } catch (err: any) {
+      setAlarmTestError(err?.message || 'Failed to activate browser audio. Check permissions.');
+      setIsAlarmTesting(false);
+      setAlarmTestCountdown(0);
+      return false;
+    }
+  }, [telemetry.gasStatus, telemetry.gasRawAdc, gasSafetyState.lockoutStatus, gasSafetyState.gasClearedPendingReset, isAlarmTesting, stopAlarmTest]);
+
+  // Clean up timers & stop test siren when context unmounts
+  useEffect(() => {
+    return () => {
+      if (alarmTestTimerRef.current) clearTimeout(alarmTestTimerRef.current);
+      if (alarmTestIntervalRef.current) clearInterval(alarmTestIntervalRef.current);
+    };
+  }, []);
+
   // Additional Sensor Alert Triggers
   const triggerHighTempAlert = useCallback((temp: number = 34.5) => {
     setTelemetry(prev => ({ ...prev, temperature: temp }));
@@ -2703,6 +2834,11 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setResetLockoutUiStatus,
     setExhaustSafetyCertified,
     simulateSensorFault,
+    isAlarmTesting,
+    alarmTestCountdown,
+    alarmTestError,
+    startAlarmTest,
+    stopAlarmTest,
     triggerHighTempAlert,
     triggerSensorDisconnectedAlert,
     triggerInvalidReadingAlert,
@@ -2768,6 +2904,11 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setResetLockoutUiStatus,
     setExhaustSafetyCertified,
     simulateSensorFault,
+    isAlarmTesting,
+    alarmTestCountdown,
+    alarmTestError,
+    startAlarmTest,
+    stopAlarmTest,
     triggerHighTempAlert,
     triggerSensorDisconnectedAlert,
     triggerInvalidReadingAlert,

@@ -10,8 +10,11 @@ class EmergencySirenService {
   private oscillator: OscillatorNode | null = null;
   private gainNode: GainNode | null = null;
   private intervalId: any = null;
+  private stopTimeoutId: any = null;
   private isPlaying: boolean = false;
+  private shouldBePlaying: boolean = false;
   private highTone: boolean = true;
+  private unlockListenerAttached: boolean = false;
 
   private initContext() {
     if (!this.audioCtx && typeof window !== 'undefined') {
@@ -22,15 +25,49 @@ class EmergencySirenService {
     }
   }
 
+  private setupAutoplayUnlock() {
+    if (typeof window === 'undefined' || this.unlockListenerAttached) return;
+    this.unlockListenerAttached = true;
+
+    const unlock = () => {
+      this.unlockListenerAttached = false;
+      if (this.audioCtx && this.audioCtx.state !== 'running') {
+        this.audioCtx.resume().then(() => {
+          if (this.gainNode && this.audioCtx && this.isPlaying) {
+            this.gainNode.gain.setValueAtTime(0.25, this.audioCtx.currentTime);
+          }
+          if (this.shouldBePlaying && !this.isPlaying) {
+            this.start();
+          }
+        }).catch(() => {});
+      } else if (this.shouldBePlaying && !this.isPlaying) {
+        this.start();
+      }
+    };
+
+    window.addEventListener('click', unlock, { once: true, capture: true });
+    window.addEventListener('keydown', unlock, { once: true, capture: true });
+    window.addEventListener('pointerdown', unlock, { once: true, capture: true });
+    window.addEventListener('touchstart', unlock, { once: true, capture: true });
+  }
+
   public start() {
+    this.shouldBePlaying = true;
+
+    if (this.stopTimeoutId) {
+      clearTimeout(this.stopTimeoutId);
+      this.stopTimeoutId = null;
+    }
+
     if (this.isPlaying) return;
 
     try {
       this.initContext();
       if (!this.audioCtx) return;
 
-      if (this.audioCtx.state === 'suspended') {
-        this.audioCtx.resume();
+      if (this.audioCtx.state !== 'running') {
+        this.audioCtx.resume().catch(() => {});
+        this.setupAutoplayUnlock();
       }
 
       this.oscillator = this.audioCtx.createOscillator();
@@ -58,10 +95,18 @@ class EmergencySirenService {
       }, 250);
     } catch {
       // Audio autoplay policy may require user interaction
+      this.setupAutoplayUnlock();
     }
   }
 
   public stop() {
+    this.shouldBePlaying = false;
+
+    if (this.stopTimeoutId) {
+      clearTimeout(this.stopTimeoutId);
+      this.stopTimeoutId = null;
+    }
+
     if (!this.isPlaying) return;
 
     if (this.intervalId) {
@@ -78,7 +123,7 @@ class EmergencySirenService {
       }
     }
 
-    setTimeout(() => {
+    this.stopTimeoutId = setTimeout(() => {
       if (this.oscillator) {
         try {
           this.oscillator.stop();
@@ -89,6 +134,7 @@ class EmergencySirenService {
         this.oscillator = null;
       }
       this.isPlaying = false;
+      this.stopTimeoutId = null;
     }, 120);
   }
 
