@@ -18,6 +18,8 @@ import { useSmartHome } from '../../hooks/useSmartHome';
 export const GasSensorCard: React.FC<{ telemetry: SensorTelemetry }> = ({ telemetry }) => {
   const { 
     gasSafetyState,
+    preEmergencySnapshot,
+    triggerEmergencyRecovery,
     setIsGasEmergencyModalOpen, 
     isSirenMuted, 
     toggleSirenMute, 
@@ -139,7 +141,7 @@ export const GasSensorCard: React.FC<{ telemetry: SensorTelemetry }> = ({ teleme
       </div>
 
       {/* Quick Live Status Ribbon for Demo & Live Evaluation */}
-      <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
+      <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 text-xs font-mono">
         <div className="p-2 rounded-lg bg-slate-950/70 border border-slate-800">
           <span className="text-slate-400 block text-[10px]">MQ-2 Raw ADC</span>
           <span className={`font-bold ${isDanger ? 'text-rose-400' : isWarning ? 'text-amber-400' : 'text-cyan-300'}`}>
@@ -157,12 +159,49 @@ export const GasSensorCard: React.FC<{ telemetry: SensorTelemetry }> = ({ teleme
           </span>
         </div>
         <div className="p-2 rounded-lg bg-slate-950/70 border border-slate-800">
+          <span className="text-slate-400 block text-[10px]">Hardware Buzzer</span>
+          <span className={`font-bold ${isDanger ? 'text-rose-400 animate-pulse' : 'text-slate-400'}`}>
+            {isDanger ? 'ACTIVE (GPIO 33)' : 'IDLE (GPIO 33)'}
+          </span>
+        </div>
+        <div className="p-2 rounded-lg bg-slate-950/70 border border-slate-800">
+          <span className="text-slate-400 block text-[10px]">Safety Exhaust</span>
+          <span className={`font-bold ${gasSafetyState.exhaustFanActive ? 'text-emerald-400' : 'text-slate-400'}`}>
+            {gasSafetyState.exhaustFanActive ? 'VENTILATING (32)' : 'STANDBY (32)'}
+          </span>
+        </div>
+        <div className="p-2 rounded-lg bg-slate-950/70 border border-slate-800">
           <span className="text-slate-400 block text-[10px]">Live Audio</span>
           <span className={`font-bold ${isAlarmTesting ? 'text-amber-400 animate-pulse' : 'text-slate-400'}`}>
             {isAlarmTesting ? `TEST (${alarmTestCountdown}s)` : 'READY'}
           </span>
         </div>
       </div>
+
+      {/* Pre-Emergency Snapshot & Recovery Status Card */}
+      {preEmergencySnapshot && (
+        <div className="mt-3 p-3 rounded-xl bg-slate-950/80 border border-cyan-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-mono">
+          <div className="flex items-center gap-3">
+            <span className="text-cyan-400 font-bold uppercase text-[11px]">Pre-Emergency Snapshot:</span>
+            <span className="text-slate-300">
+              Light: <strong className={preEmergencySnapshot.light ? 'text-emerald-400' : 'text-slate-400'}>{preEmergencySnapshot.light ? 'ON' : 'OFF'}</strong> • 
+              Fan: <strong className={preEmergencySnapshot.fan ? 'text-emerald-400' : 'text-slate-400'}>{preEmergencySnapshot.fan ? 'ON' : 'OFF'}</strong> • 
+              Motor: <strong className={preEmergencySnapshot.motor ? 'text-emerald-400' : 'text-slate-400'}>{preEmergencySnapshot.motor ? 'ON' : 'OFF'}</strong>
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-slate-400">Recovery: {gasSafetyState.recoveryStatus || 'SNAPSHOT_STORED'}</span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={triggerEmergencyRecovery}
+              className="text-cyan-300 border-cyan-500/40 hover:bg-cyan-500/10"
+            >
+              Execute Safe Recovery
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Main PPM & ADC Telemetry */}
       <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">

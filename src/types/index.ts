@@ -91,6 +91,13 @@ export type LockoutResetUiStatus =
   | 'RESET REJECTED — SENSOR FAULT'
   | 'LOCKOUT CLEARED';
 
+export interface PreEmergencySnapshot {
+  light: boolean;
+  fan: boolean;
+  motor: boolean;
+  timestamp: string;
+}
+
 export interface GasSafetySystemState {
   lockoutStatus: EmergencyLifecycleState;
   mainContactorTripped: boolean;
@@ -105,6 +112,9 @@ export interface GasSafetySystemState {
   resetAuthorizedBy: string | null;
   isSimulated: boolean;
   rawAdc?: number;
+  preEmergencySnapshot?: PreEmergencySnapshot | null;
+  recoveryStatus?: 'IDLE' | 'MONITORING_SAFE' | 'RECOVERED';
+  safeDurationMs?: number;
 }
 
 export interface SensorTelemetry {

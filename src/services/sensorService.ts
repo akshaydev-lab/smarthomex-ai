@@ -8,7 +8,7 @@ import type {
   Device, 
   SystemAlert, 
   AutomationRule 
-} from '../types';
+} from '../types/index.ts';
 
 export const INITIAL_DEVICES: Device[] = [
   {
@@ -68,29 +68,11 @@ export const INITIAL_DEVICES: Device[] = [
     commandHistory: [],
   },
   {
-    id: 'relay-4',
-    deviceSlug: 'street-light',
-    name: 'Street Light',
-    type: 'light',
-    relayChannel: 4,
-    gpioPin: 14, // 4-Ch Relay Board Ch 4
-    state: false, // Default OFF on boot
-    room: 'Outdoor / Street',
-    powerWatts: 0,
-    ratedWatts: 100,
-    lastToggled: 'On system startup',
-    isHardwareConnected: false,
-    controlMode: 'MANUAL',
-    manualOverrideActive: false,
-    lastCommandStatus: 'success',
-    commandHistory: [],
-  },
-  {
     id: 'relay-exhaust',
     deviceSlug: 'exhaust-fan',
     name: 'Exhaust Fan',
     type: 'exhaust_fan',
-    relayChannel: 5, // Separate DC Switching Driver / Relay
+    relayChannel: 5, // Dedicated DC Switching Driver / Relay (GPIO 32)
     gpioPin: 32,
     state: false, // Default OFF on boot
     room: 'Kitchen Area',
@@ -134,7 +116,10 @@ export const INITIAL_TELEMETRY: SensorTelemetry = {
   isHardwareConnected: false,
 };
 
-export const INITIAL_ALERTS: SystemAlert[] = (!import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true') ? [
+const isProd = Boolean(import.meta?.env?.PROD);
+const isDemoMode = import.meta?.env?.VITE_DEMO_MODE === 'true';
+
+export const INITIAL_ALERTS: SystemAlert[] = (!isProd && isDemoMode) ? [
   {
     id: 'alert-1',
     type: 'gas_leak',
@@ -255,7 +240,7 @@ export const INITIAL_AUTOMATIONS: AutomationRule[] = [
 ];
 
 export function getHourlyTelemetryData(): EnergyHourlyData[] {
-  if (import.meta.env.PROD || import.meta.env.VITE_DEMO_MODE !== 'true') {
+  if (isProd || !isDemoMode) {
     return [];
   }
   return [
@@ -275,7 +260,7 @@ export function getHourlyTelemetryData(): EnergyHourlyData[] {
 }
 
 export function getDailyEnergyData(): EnergyDailyData[] {
-  if (import.meta.env.PROD || import.meta.env.VITE_DEMO_MODE !== 'true') {
+  if (isProd || !isDemoMode) {
     return [];
   }
   return [
@@ -290,7 +275,7 @@ export function getDailyEnergyData(): EnergyDailyData[] {
 }
 
 export function getWeeklyEnergyData(): EnergyWeeklyData[] {
-  if (import.meta.env.PROD || import.meta.env.VITE_DEMO_MODE !== 'true') {
+  if (isProd || !isDemoMode) {
     return [];
   }
   return [
@@ -302,7 +287,7 @@ export function getWeeklyEnergyData(): EnergyWeeklyData[] {
 }
 
 export function getMonthlyEnergyData(): EnergyMonthlyData[] {
-  if (import.meta.env.PROD || import.meta.env.VITE_DEMO_MODE !== 'true') {
+  if (isProd || !isDemoMode) {
     return [];
   }
   return [

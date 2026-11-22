@@ -34,7 +34,7 @@ export const Sidebar: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ is
 
   const navItems: NavItem[] = [
     { id: 'overview', label: 'Overview Dashboard', icon: LayoutDashboard },
-    { id: 'devices', label: 'Device Management', icon: ToggleRight, badge: '5 Relays' },
+    { id: 'devices', label: 'Device Management', icon: ToggleRight, badge: '3 Relays + Safety' },
     {
       id: 'schedules',
       label: 'Schedules',
@@ -183,7 +183,7 @@ export const Sidebar: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ is
 
               <div className="flex items-center justify-between">
                 <span className="text-slate-400">Target Relays:</span>
-                <span className="text-slate-300">5 Channels (GPIO 25, 26, 27, 14, 32)</span>
+                <span className="text-slate-300">3 Relays + Safety Exhaust (25, 26, 27, 32)</span>
               </div>
 
               <div className="flex items-center justify-between">

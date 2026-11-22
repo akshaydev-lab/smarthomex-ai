@@ -26,7 +26,8 @@ export const HomeXAssistant: React.FC = () => {
     voiceLogs, 
     addVoiceLog,
     clearVoiceLogs,
-    settings 
+    settings,
+    toggleSirenMute
   } = useSmartHome();
 
   const [textInput, setTextInput] = useState('');
@@ -95,6 +96,8 @@ export const HomeXAssistant: React.FC = () => {
       setAllDevices(true);
     } else if (parsed.action === 'ALL_OFF') {
       setAllDevices(false);
+    } else if (parsed.action === 'MUTE_SIREN') {
+      toggleSirenMute();
     }
 
     // Record response

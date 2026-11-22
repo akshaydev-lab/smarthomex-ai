@@ -86,7 +86,7 @@ export const SchedulesPage: React.FC = () => {
                 <Badge variant="demo" size="sm">IST Sandbox</Badge>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Automated ON/OFF schedules for Light, Fan, Water Booster Motor, Street Light & Kitchen Exhaust Fan
+                Automated ON/OFF schedules for Light, Fan & Water Booster Motor
               </p>
             </div>
           </div>
@@ -110,7 +110,7 @@ export const SchedulesPage: React.FC = () => {
             <span className="text-2xl font-bold font-mono text-slate-100">{schedules.length}</span>
             <span className="text-xs text-slate-400 font-mono">Tasks</span>
           </div>
-          <span className="text-[10px] text-cyan-400 font-mono mt-1 block">5-Channel Relays</span>
+          <span className="text-[10px] text-cyan-400 font-mono mt-1 block">3 Appliance Relays</span>
         </Card>
 
         <Card className="p-3.5">
@@ -179,8 +179,8 @@ export const SchedulesPage: React.FC = () => {
             onChange={(e) => setDeviceFilter(e.target.value)}
             className="glass-input px-3 py-1.5 rounded-xl text-xs text-slate-200 bg-slate-900"
           >
-            <option value="all">All Devices (5 Relays)</option>
-            {devices.map(d => (
+            <option value="all">All Normal Devices (3 Relays)</option>
+            {devices.filter(d => d.type !== 'exhaust_fan' && d.relayChannel <= 3).map(d => (
               <option key={d.id} value={d.id}>
                 {d.name} (Ch {d.relayChannel})
               </option>

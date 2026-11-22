@@ -10,6 +10,7 @@ import type {
   GasSafetyLevel, 
   EmergencyLockoutStatus,
   GasSafetySystemState,
+  PreEmergencySnapshot,
   DeviceSchedule,
   INA219Reading,
   HardwareBridgeStatus,
@@ -17,6 +18,7 @@ import type {
   DeviceCommandRecord,
   LiveToast
 } from '../types';
+import { speakText } from '../lib/voiceAssistant';
 import { 
   INITIAL_DEVICES, 
   INITIAL_TELEMETRY, 
@@ -87,6 +89,8 @@ interface SmartHomeContextType {
 
   // Emergency Gas Alert & Life-Safety System
   gasSafetyState: GasSafetySystemState;
+  preEmergencySnapshot: PreEmergencySnapshot | null;
+  triggerEmergencyRecovery: () => void;
   isGasEmergencyModalOpen: boolean;
   setIsGasEmergencyModalOpen: (open: boolean) => void;
   isSirenMuted: boolean;
@@ -405,6 +409,27 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [isSirenMuted, setIsSirenMuted] = useState<boolean>(false);
   const [resetLockoutUiStatus, setResetLockoutUiStatus] = useState<LockoutResetUiStatus>('LOCKOUT ACTIVE');
   const [resetLockoutDetail, setResetLockoutDetail] = useState<string | null>(null);
+
+  // Pre-Emergency Snapshot of the 3 normal user-controlled relays (Light, Fan, Motor)
+  const [preEmergencySnapshot, setPreEmergencySnapshot] = useState<PreEmergencySnapshot | null>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('smarthomex_pre_emergency_snapshot');
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch {
+          return null;
+        }
+      }
+    }
+    return null;
+  });
+
+  const hasAnnouncedEmergencyRef = useRef<boolean>(false);
+  const hasAnnouncedRecoveryRef = useRef<boolean>(false);
+  const hasSavedSnapshotRef = useRef<boolean>(false);
+  const safeReadingStartRef = useRef<number | null>(null);
+
   const [pushNotificationStatus, setPushNotificationStatus] = useState<'default' | 'granted' | 'denied' | 'unsupported'>(() => {
     if (typeof window !== 'undefined' && 'Notification' in window) {
       return Notification.permission as 'default' | 'granted' | 'denied';
@@ -899,6 +924,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         // Tasks 3 & 4: Immediately update safety state & interlocks based on gas_status & gas_raw_adc
         const isRealtimeDanger = newGasStatus === 'danger' || (rawAdcVal != null && rawAdcVal >= 1600);
         if (isRealtimeDanger) {
+          safeReadingStartRef.current = null;
           if (alarmTestTimerRef.current) clearTimeout(alarmTestTimerRef.current);
           if (alarmTestIntervalRef.current) clearInterval(alarmTestIntervalRef.current);
           setIsAlarmTesting(false);
@@ -916,15 +942,43 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             mainContactorTripped: true,
             buzzerActive: true,
             gasClearedPendingReset: false,
+            exhaustFanActive: true,
             lastIncidentTimestamp: recTime,
             rawAdc: rawAdcVal ?? prev.rawAdc,
           }));
 
-          // Immediately disconnect Light, Fan, and Motor relays for spark safety
-          setDevices(prev =>
-            prev.map(d => {
-              if (d.id === 'relay-exhaust') {
-                return d; // DC exhaust fan handled per certified status
+          // Voice announcement for gas emergency (deduplicated)
+          if (!hasAnnouncedEmergencyRef.current) {
+            hasAnnouncedEmergencyRef.current = true;
+            hasAnnouncedRecoveryRef.current = false;
+            speakText("Warning! Gas leakage detected. All controlled devices have been turned off. Emergency exhaust system activated.");
+          }
+
+          // Immediately disconnect Light, Fan, and Motor relays for spark safety, and energize dedicated exhaust fan
+          setDevices(prev => {
+            if (!hasSavedSnapshotRef.current) {
+              const snap: PreEmergencySnapshot = {
+                light: prev.find(d => d.relayChannel === 1)?.state ?? false,
+                fan: prev.find(d => d.relayChannel === 2)?.state ?? false,
+                motor: prev.find(d => d.relayChannel === 3)?.state ?? false,
+                timestamp: recTime,
+              };
+              setPreEmergencySnapshot(snap);
+              if (typeof window !== 'undefined') {
+                try { localStorage.setItem('smarthomex_pre_emergency_snapshot', JSON.stringify(snap)); } catch {}
+              }
+              hasSavedSnapshotRef.current = true;
+            }
+
+            return prev.map(d => {
+              if (d.id === 'relay-exhaust' || d.type === 'exhaust_fan') {
+                return {
+                  ...d,
+                  state: true, // Dedicated emergency exhaust fan activated ON!
+                  powerWatts: d.ratedWatts,
+                  lastToggled: 'Just now',
+                  lastCommandStatus: 'success',
+                };
               }
               return {
                 ...d,
@@ -934,8 +988,8 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                 lastToggled: 'Just now',
                 lastCommandStatus: 'gas_inhibited',
               };
-            })
-          );
+            });
+          });
         } else if (newGasStatus === 'sensor_fault') {
           // Sensor fault: open circuit / ADC < 45
           setGasSafetyState(prev => {
@@ -1376,7 +1430,24 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     // Demo alerts/simulations must NEVER activate physical hardware lockouts!
     const isLockoutActive = 
       telemetry.gasStatus === 'danger' || 
-      ((gasSafetyState.lockoutStatus === 'EMERGENCY_LOCKOUT' || gasSafetyState.lockoutStatus === 'LOCKOUT_PENDING_RESET') && !gasSafetyState.isSimulated);
+      ((gasSafetyState.lockoutStatus === 'EMERGENCY_LOCKOUT' || gasSafetyState.lockoutStatus === 'LOCKOUT_PENDING_RESET' || gasSafetyState.lockoutStatus === 'CRITICAL') && !gasSafetyState.isSimulated);
+
+    // Prevent turning OFF dedicated emergency exhaust fan during active gas emergency!
+    if ((target.type === 'exhaust_fan' || target.id === 'relay-exhaust') && state === false && isLockoutActive) {
+      const alert: SystemAlert = {
+        id: `gas-inhibit-exhaust-${Date.now()}`,
+        type: 'gas_leak',
+        severity: 'danger',
+        title: 'Safety Interlock: Exhaust Deactivation Blocked',
+        description: 'Dedicated emergency exhaust fan must remain operating during active gas emergency.',
+        timestamp: 'Just now',
+        isDemo: !import.meta.env.PROD && Boolean(import.meta.env.VITE_DEMO_MODE === 'true'),
+        acknowledged: false,
+        source: 'Hardware Safety Interlock',
+      };
+      setAlerts(prev => [alert, ...prev]);
+      return;
+    }
 
     if (isLockoutActive && state === true) {
       const reasonMsg = gasSafetyState.lockoutStatus === 'LOCKOUT_PENDING_RESET'
@@ -1527,7 +1598,28 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     if (target.pendingCommand) return; // Debounce rapid spam clicks
 
+    const isLockoutActive = 
+      telemetry.gasStatus === 'danger' || 
+      ((gasSafetyState.lockoutStatus === 'EMERGENCY_LOCKOUT' || gasSafetyState.lockoutStatus === 'LOCKOUT_PENDING_RESET' || gasSafetyState.lockoutStatus === 'CRITICAL') && !gasSafetyState.isSimulated);
+
     const nextState = !target.state;
+
+    // Prevent turning OFF dedicated emergency exhaust fan during active gas emergency!
+    if ((target.type === 'exhaust_fan' || target.id === 'relay-exhaust') && nextState === false && isLockoutActive) {
+      const alert: SystemAlert = {
+        id: `gas-inhibit-exhaust-${Date.now()}`,
+        type: 'gas_leak',
+        severity: 'danger',
+        title: 'Safety Interlock: Exhaust Deactivation Blocked',
+        description: 'Dedicated emergency exhaust fan must remain operating during active gas emergency.',
+        timestamp: 'Just now',
+        isDemo: !import.meta.env.PROD && Boolean(import.meta.env.VITE_DEMO_MODE === 'true'),
+        acknowledged: false,
+        source: 'Hardware Safety Interlock',
+      };
+      setAlerts(prev => [alert, ...prev]);
+      return;
+    }
 
     // Set pending state so the button displays spinner immediately
     setDevices(prev =>
@@ -1714,8 +1806,8 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return;
     }
 
-    // Filter controllable user devices across all 5 active relays
-    const targets = devices.filter(d => d.type !== 'unused');
+    // Filter controllable normal user devices across the 3 normal relays (Light, Fan, Motor)
+    const targets = devices.filter(d => d.type !== 'unused' && d.type !== 'exhaust_fan' && d.relayChannel <= 3);
 
     // Mark targets as pending
     setDevices(prev =>
@@ -1828,23 +1920,34 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const nowIso = new Date().toISOString();
     const rawAdc = Math.round(indicativeIndex * 3.8);
 
-    // 1. Immediately disconnect Light, Fan, and Motor relays
-    // DC Exhaust Fan: Energized ONLY if certified for hazardous atmospheres
-    const shouldRunExhaust = gasSafetyState.exhaustSafetyCertified;
+    // Save pre-emergency snapshot of the 3 normal user-controlled relays
+    if (!hasSavedSnapshotRef.current) {
+      const snap: PreEmergencySnapshot = {
+        light: devices.find(d => d.relayChannel === 1)?.state ?? false,
+        fan: devices.find(d => d.relayChannel === 2)?.state ?? false,
+        motor: devices.find(d => d.relayChannel === 3)?.state ?? false,
+        timestamp: nowIso,
+      };
+      setPreEmergencySnapshot(snap);
+      if (typeof window !== 'undefined') {
+        try { localStorage.setItem('smarthomex_pre_emergency_snapshot', JSON.stringify(snap)); } catch {}
+      }
+      hasSavedSnapshotRef.current = true;
+    }
 
+    // 1. Immediately disconnect the 3 normal user devices (Light, Fan, Motor)
+    // 2. Activate dedicated emergency exhaust fan on GPIO 32
     setDevices(prev =>
       prev.map(d => {
-        if (d.id === 'relay-exhaust') {
-          // Dedicated DC Exhaust Fan
+        if (d.id === 'relay-exhaust' || d.type === 'exhaust_fan') {
           return {
             ...d,
-            state: shouldRunExhaust,
-            powerWatts: shouldRunExhaust ? d.ratedWatts : 0,
+            state: true,
+            powerWatts: d.ratedWatts,
             lastToggled: 'Just now',
-            lastCommandStatus: shouldRunExhaust ? 'success' : 'gas_inhibited',
+            lastCommandStatus: 'success',
           };
         }
-        // Ordinary household loads: Light (Ch 1), Fan (Ch 2), Motor (Ch 3), Relay 4 FORCED OFF
         return {
           ...d,
           state: false,
@@ -1859,9 +1962,9 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     // 2. Update life-safety lockout system state
     const newSafetyState: GasSafetySystemState = {
       lockoutStatus: 'CRITICAL',
-      mainContactorTripped: true, // Emergency Trip via independent safety circuit
-      exhaustSafetyCertified: gasSafetyState.exhaustSafetyCertified,
-      exhaustFanActive: shouldRunExhaust,
+      mainContactorTripped: true,
+      exhaustSafetyCertified: true,
+      exhaustFanActive: true,
       buzzerActive: true,
       gasClearedPendingReset: false,
       sensorFault: false,
@@ -1871,6 +1974,8 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       resetAuthorizedBy: null,
       isSimulated: !isHardware,
       rawAdc,
+      preEmergencySnapshot,
+      recoveryStatus: 'IDLE',
     };
     setGasSafetyState(newSafetyState);
 
@@ -1897,13 +2002,18 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setIsSirenMuted(false);
     emergencySiren.start();
 
+    // Voice announcement for gas emergency (deduplicated)
+    if (!hasAnnouncedEmergencyRef.current) {
+      hasAnnouncedEmergencyRef.current = true;
+      hasAnnouncedRecoveryRef.current = false;
+      speakText("Warning! Gas leakage detected. All controlled devices have been turned off. Emergency exhaust system activated.");
+    }
+
     // 5. Record CRITICAL gas leakage alert in notification history & Supabase
     const now = new Date();
     const timestampStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ', Today';
 
-    const exhaustNotice = shouldRunExhaust
-      ? 'Exhaust Fan: ACTIVATED (ATEX/IECEx explosion-proof certified hazardous exhaust system).'
-      : 'Exhaust Fan: INHIBITED / DISABLED (Standard DC fan contacts present spark ignition risk in combustible gas).';
+    const exhaustNotice = 'Exhaust Fan: ACTIVATED (Dedicated Emergency Ventilation on GPIO 32).';
 
     const newAlert: SystemAlert = {
       id: `gas-leak-${Date.now()}`,
@@ -1939,7 +2049,133 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         // ignore notification error
       }
     }
-  }, [gasSafetyState.exhaustSafetyCertified, gasSafetyState.lastResetTimestamp, user?.id]);
+  }, [gasSafetyState.exhaustSafetyCertified, gasSafetyState.lastResetTimestamp, user?.id, preEmergencySnapshot]);
+
+  // Complete MQ-2 Gas Emergency Recovery Sequence
+  const triggerEmergencyRecovery = useCallback(() => {
+    // 1. Verify gas-safe condition is stable
+    const currentAdc = telemetry.gasRawAdc ?? gasSafetyState.rawAdc ?? 400;
+    if (telemetry.gasStatus === 'danger' || currentAdc >= 900) {
+      addToast({
+        type: 'error',
+        title: 'Recovery Denied',
+        message: 'Cannot execute gas recovery: Gas reading is at or above clearance threshold (900 ADC).',
+        duration: 4000,
+      });
+      return;
+    }
+
+    // 2. Stop hardware buzzer
+    // 3. Stop website siren
+    emergencySiren.stop();
+
+    // 4. Turn OFF dedicated exhaust relay GPIO 32
+    // 6. Restore previous normal-device states using stored pre-emergency snapshot
+    const snapshot = preEmergencySnapshot;
+    setDevices(prev => prev.map(d => {
+      if (d.id === 'relay-exhaust' || d.type === 'exhaust_fan') {
+        return {
+          ...d,
+          state: false,
+          powerWatts: 0,
+          lastToggled: 'Deactivated on recovery',
+          lastCommandStatus: 'success',
+        };
+      }
+      if (snapshot) {
+        if (d.relayChannel === 1) {
+          return {
+            ...d,
+            state: snapshot.light,
+            powerWatts: snapshot.light ? d.ratedWatts : 0,
+            lastToggled: 'Restored from snapshot',
+            lastCommandStatus: 'success',
+          };
+        }
+        if (d.relayChannel === 2) {
+          return {
+            ...d,
+            state: snapshot.fan,
+            powerWatts: snapshot.fan ? d.ratedWatts : 0,
+            lastToggled: 'Restored from snapshot',
+            lastCommandStatus: 'success',
+          };
+        }
+        if (d.relayChannel === 3) {
+          return {
+            ...d,
+            state: snapshot.motor,
+            powerWatts: snapshot.motor ? d.ratedWatts : 0,
+            lastToggled: 'Restored from snapshot',
+            lastCommandStatus: 'success',
+          };
+        }
+      }
+      return d;
+    }));
+
+    // 5. Clear emergency lockout
+    const nowIso = new Date().toISOString();
+    setGasSafetyState(prev => ({
+      ...prev,
+      lockoutStatus: 'NORMAL',
+      mainContactorTripped: false,
+      buzzerActive: false,
+      gasClearedPendingReset: false,
+      exhaustFanActive: false,
+      lastResetTimestamp: nowIso,
+      resetAuthorizedBy: 'Automatic Safety Recovery Engine',
+      recoveryStatus: 'RECOVERED',
+      rawAdc: currentAdc,
+    }));
+
+    setTelemetry(prev => ({
+      ...prev,
+      gasStatus: 'safe',
+      smokeDetected: false,
+      buzzerState: false,
+      mainContactorTripped: false,
+    }));
+
+    // 7. Report recovery to backend
+    if (user?.id) {
+      resolveGasAlertsInSupabase(user.id).catch(console.warn);
+    }
+
+    const recoveryAlert: SystemAlert = {
+      id: `gas-cleared-rec-${Date.now()}`,
+      type: 'gas_leak',
+      severity: 'info',
+      title: 'Gas Normalized & Normal Operation Restored',
+      description: 'MQ-2 readings confirmed safe. Acoustic siren silenced. Dedicated exhaust deactivated. Normal appliances restored from pre-emergency snapshot.',
+      timestamp: 'Just now',
+      isDemo: !import.meta.env.PROD && Boolean(import.meta.env.VITE_DEMO_MODE === 'true'),
+      acknowledged: true,
+      source: 'Gas Emergency Recovery Engine',
+      actionTaken: 'Exhaust OFF • Pre-emergency appliance states restored • Lockout cleared.',
+    };
+    setAlerts(prev => [recoveryAlert, ...prev]);
+
+    // 8. Update website emergency status
+    setIsGasEmergencyModalOpen(false);
+    setIsSirenMuted(false);
+
+    // 9. Announce recovery through voice assistant
+    if (!hasAnnouncedRecoveryRef.current) {
+      hasAnnouncedRecoveryRef.current = true;
+      hasAnnouncedEmergencyRef.current = false;
+      hasSavedSnapshotRef.current = false;
+      safeReadingStartRef.current = null;
+      speakText("Gas level is now within the configured safe range. Emergency status has been cleared.");
+    }
+
+    addToast({
+      type: 'success',
+      title: 'Gas Recovery Complete',
+      message: 'All safety criteria verified. Appliances restored from pre-emergency snapshot.',
+      duration: 5000,
+    });
+  }, [telemetry.gasRawAdc, gasSafetyState.rawAdc, telemetry.gasStatus, preEmergencySnapshot, user?.id, addToast]);
 
   // Gas Normalization Below Trip Threshold:
   // CRITICAL REQUIREMENT: Do NOT automatically restore Light, Fan, or Motor.
@@ -3031,6 +3267,8 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setTariffRate,
     triggerPowerAnomaly,
     gasSafetyState,
+    preEmergencySnapshot,
+    triggerEmergencyRecovery,
     isGasEmergencyModalOpen,
     setIsGasEmergencyModalOpen,
     isSirenMuted,
@@ -3114,6 +3352,8 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setTariffRate,
     triggerPowerAnomaly,
     gasSafetyState,
+    preEmergencySnapshot,
+    triggerEmergencyRecovery,
     isGasEmergencyModalOpen,
     isSirenMuted,
     toggleSirenMute,

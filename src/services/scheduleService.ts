@@ -61,10 +61,10 @@ export const INITIAL_SCHEDULES: DeviceSchedule[] = [
   },
   {
     id: 'sched-5',
-    name: 'Kitchen Post-Cooking Ventilation',
-    deviceId: 'relay-4', // Exhaust Fan
+    name: 'Master Bedroom Night Fan',
+    deviceId: 'relay-2', // Master Bedroom Fan
     action: 'ON',
-    scheduledTime: '21:00',
+    scheduledTime: '22:00',
     repeatType: 'daily',
     repeatDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
     enabled: false,

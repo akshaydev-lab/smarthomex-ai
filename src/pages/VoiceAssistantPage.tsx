@@ -29,9 +29,10 @@ export const VoiceAssistantPage: React.FC = () => {
               <li>• "Turn on living room light"</li>
               <li>• "Turn off ceiling fan"</li>
               <li>• "Start water motor / pump"</li>
-              <li>• "Turn on street light"</li>
-              <li>• "Emergency exhaust fan"</li>
               <li>• "Turn off all devices"</li>
+              <li>• "Is there a gas emergency?"</li>
+              <li>• "Check gas sensor"</li>
+              <li>• "Mute emergency siren"</li>
             </ul>
           </div>
 

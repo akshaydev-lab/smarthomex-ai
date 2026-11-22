@@ -42,6 +42,8 @@ export const OverviewPage: React.FC = () => {
 
   const hourlyData = getHourlyTelemetryData();
   const unreadAlerts = alerts.filter(a => !a.acknowledged);
+  const normalDevices = devices.filter(d => d.type !== 'exhaust_fan' && d.relayChannel <= 3);
+  const activeNormalCount = normalDevices.filter(d => d.state).length;
 
   return (
     <div className="space-y-6">
@@ -54,10 +56,10 @@ export const OverviewPage: React.FC = () => {
             <ToggleRight className="h-4 w-4 text-cyan-400" />
           </div>
           <div className="flex items-baseline gap-1.5">
-            <span className="text-2xl font-bold font-mono text-cyan-300">{activeDeviceCount}</span>
-            <span className="text-xs text-slate-400 font-mono">/ {devices.length} ON</span>
+            <span className="text-2xl font-bold font-mono text-cyan-300">{activeNormalCount}</span>
+            <span className="text-xs text-slate-400 font-mono">/ {normalDevices.length} ON</span>
           </div>
-          <span className="text-[10px] text-slate-400 mt-1 block">GPIO 25, 26, 27, 14, 32</span>
+          <span className="text-[10px] text-slate-400 mt-1 block">GPIO 25, 26, 27 (Appliances)</span>
         </Card>
 
         {/* Metric 2: Live Power Load */}
@@ -150,19 +152,13 @@ export const OverviewPage: React.FC = () => {
       {/* Master 5-Channel Relay Controller Bar */}
       <MasterControl />
 
-      {/* 5 Dedicated Device Relay Cards */}
+      {/* 3 Dedicated Device Relay Cards */}
       <div>
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <Cpu className="h-5 w-5 text-cyan-400" />
-            <h2 className="text-lg font-bold text-slate-100">ESP32 5-Channel Relays</h2>
-            <Badge variant={hardwareBridge.esp32Connected ? 'emerald' : 'demo'} size="sm">
-              {hardwareBridge.esp32Connected
-                ? 'ESP32 Connected'
-                : (!import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true')
-                ? 'Demo Mode'
-                : 'ESP32 Offline'}
-            </Badge>
+            <h2 className="text-lg font-bold text-slate-100">3-Channel Household Appliance Relays</h2>
+            <Badge variant="teal" size="sm">3 Relays Armed</Badge>
           </div>
           <Button
             variant="ghost"
@@ -174,8 +170,8 @@ export const OverviewPage: React.FC = () => {
           </Button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-          {devices.map(device => (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {normalDevices.map(device => (
             <DeviceCard key={device.id} device={device} onToggle={toggleDevice} />
           ))}
         </div>
@@ -269,7 +265,7 @@ export const OverviewPage: React.FC = () => {
               <Badge variant="teal" size="sm">Speech Recognition Active</Badge>
             </h3>
             <p className="text-xs text-slate-300 mt-0.5">
-              Control Light, Fan, Water Motor, Street Light & Exhaust Fan or query DHT11/MQ-2 metrics with natural voice commands.
+              Control Light, Fan & Water Motor or query DHT11/MQ-2 metrics with natural voice commands. Dedicated Emergency Exhaust on GPIO 32 is auto-managed.
             </p>
           </div>
         </div>

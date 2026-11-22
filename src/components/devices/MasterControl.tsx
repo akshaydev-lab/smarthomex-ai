@@ -6,10 +6,12 @@ import { Badge } from '../common/Badge';
 import { formatWatts } from '../../lib/utils';
 
 export const MasterControl: React.FC = () => {
-  const { devices, setAllDevices, activeDeviceCount, telemetry, hardwareBridge } = useSmartHome();
+  const { devices, setAllDevices, telemetry, hardwareBridge } = useSmartHome();
   const [confirmModal, setConfirmModal] = useState(false);
 
-  const totalPossibleWatts = devices.reduce((sum, d) => sum + d.ratedWatts, 0);
+  const normalDevices = devices.filter(d => d.type !== 'exhaust_fan' && d.relayChannel <= 3);
+  const activeNormalCount = normalDevices.filter(d => d.state).length;
+  const normalWatts = normalDevices.reduce((sum, d) => sum + d.ratedWatts, 0);
 
   const handleAllOn = () => {
     setConfirmModal(false);
@@ -31,7 +33,7 @@ export const MasterControl: React.FC = () => {
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-base font-bold text-slate-100">
-                5-Channel ESP32 Relay Master Controller
+                3-Channel ESP32 Relay Master Controller
               </h2>
               <Badge
                 variant={hardwareBridge.esp32Connected ? 'emerald' : (!import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true') ? 'demo' : 'slate'}
@@ -41,7 +43,7 @@ export const MasterControl: React.FC = () => {
               </Badge>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              Active-LOW Relays: Ch 1 Light (GPIO 25), Ch 2 Fan (GPIO 26), Ch 3 Motor (GPIO 27), Ch 4 Street Light (GPIO 14), Ch 5 Exhaust Fan (GPIO 32).
+              Active-LOW Relays: Ch 1 Light (GPIO 25) • Ch 2 Fan (GPIO 26) • Ch 3 Motor (GPIO 27) (Emergency Exhaust on GPIO 32 isolated in Safety System)
             </p>
           </div>
         </div>
@@ -51,7 +53,7 @@ export const MasterControl: React.FC = () => {
           <div>
             <span className="text-[11px] font-mono text-slate-400 block">Active Relays</span>
             <span className="text-sm font-bold font-mono text-cyan-300">
-              {activeDeviceCount} of {devices.length} ON
+              {activeNormalCount} of {normalDevices.length} ON
             </span>
           </div>
           <div className="h-8 w-px bg-slate-800" />
@@ -60,7 +62,7 @@ export const MasterControl: React.FC = () => {
               <Zap className="h-3 w-3 text-amber-400" /> Aggregate Load
             </span>
             <span className="text-sm font-bold font-mono text-slate-100">
-              {telemetry.power != null ? `${formatWatts(telemetry.power)} / ${formatWatts(totalPossibleWatts)}` : `-- W / ${formatWatts(totalPossibleWatts)}`}
+              {telemetry.power != null ? `${formatWatts(telemetry.power)} / ${formatWatts(normalWatts)}` : `-- W / ${formatWatts(normalWatts)}`}
             </span>
           </div>
         </div>
@@ -97,10 +99,10 @@ export const MasterControl: React.FC = () => {
               <h3 className="font-bold text-base text-slate-100">Activate All Relays?</h3>
             </div>
             <p className="text-xs text-slate-300 mb-4 leading-relaxed">
-              This action will energize all active-LOW controllable relay channels (Light, Fan, Motor, Street Light, and Exhaust Fan) simultaneously. Safety interlocks remain strictly active and will prevent actuation if combustible gas is present.
+              This action will energize all 3 active-LOW controllable appliance channels (Light, Fan, and Water Motor) simultaneously. Safety interlocks remain strictly active and will prevent actuation if combustible gas is present. Dedicated Emergency Exhaust Fan (GPIO 32) is isolated and managed exclusively by the safety system.
             </p>
             <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 mb-5 text-[11px] text-slate-400">
-              <strong>Hardware Action:</strong> Sequenced activation of active channels: Ch 1 (GPIO 25), Ch 2 (GPIO 26), Ch 3 (GPIO 27), Ch 4 (GPIO 14), Ch 5 (GPIO 32).
+              <strong>Hardware Action:</strong> Sequenced activation of active channels: Ch 1 (GPIO 25), Ch 2 (GPIO 26), Ch 3 (GPIO 27).
             </div>
             <div className="flex justify-end gap-3">
               <Button variant="ghost" size="sm" onClick={() => setConfirmModal(false)}>

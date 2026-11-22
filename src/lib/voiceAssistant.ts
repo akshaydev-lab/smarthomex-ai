@@ -1,8 +1,8 @@
-import { Device, SensorTelemetry } from '../types';
+import type { Device, SensorTelemetry } from '../types/index.ts';
 
 export interface CommandParseResult {
   understood: boolean;
-  action?: 'TOGGLE_DEVICE' | 'ALL_ON' | 'ALL_OFF' | 'QUERY_TEMP' | 'QUERY_GAS' | 'QUERY_POWER' | 'UNKNOWN';
+  action?: 'TOGGLE_DEVICE' | 'ALL_ON' | 'ALL_OFF' | 'QUERY_TEMP' | 'QUERY_GAS' | 'QUERY_POWER' | 'MUTE_SIREN' | 'UNKNOWN';
   targetDeviceId?: string;
   desiredState?: boolean;
   safetyBlocked?: boolean;
@@ -28,6 +28,92 @@ export function parseVoiceCommand(
 
   const hasTurnOff = offWords.some(w => text.includes(w));
   const hasTurnOn = onWords.some(w => text.includes(w));
+
+  // -------------------------------------------------------------------------
+  // 0. Priority Life-Safety Status & Siren Commands
+  // -------------------------------------------------------------------------
+  // Emergency Status Query: "Is there a gas emergency?" / "What is the emergency status?"
+  if (
+    text.includes('is there a gas emergency') ||
+    text.includes('is gas emergency active') ||
+    text.includes('what is the emergency status') ||
+    text.includes('emergency status') ||
+    text.includes('gas emergency')
+  ) {
+    if (isLockoutActive) {
+      return {
+        understood: true,
+        action: 'QUERY_GAS',
+        replyText: 'Warning! Gas emergency is currently ACTIVE. Safety lockout is engaged and dedicated exhaust ventilation is running.',
+        details: 'Emergency Status: ACTIVE GAS EMERGENCY (Lockout Engaged)',
+      };
+    }
+    return {
+      understood: true,
+      action: 'QUERY_GAS',
+      replyText: 'System status is normal. No gas emergency is detected. All safety systems are operating within configured parameters.',
+      details: 'Emergency Status: NORMAL (No Emergency)',
+    };
+  }
+
+  // Check Gas Sensor / Is gas level safe: "Check gas sensor." / "Is the gas level safe?"
+  if (
+    text.includes('check gas sensor') ||
+    text.includes('is the gas level safe') ||
+    text.includes('is gas safe') ||
+    text.includes('check gas level') ||
+    text.includes('check gas')
+  ) {
+    if (telemetry.gasStatus === 'danger' || (telemetry.gasRawAdc != null && telemetry.gasRawAdc >= 1600)) {
+      return {
+        understood: true,
+        action: 'QUERY_GAS',
+        replyText: `Alert! The MQ-2 gas sensor reports dangerous combustible gas levels (ADC ${telemetry.gasRawAdc ?? 'High'}). Atmosphere is UNSAFE.`,
+        details: `MQ-2 Sensor: UNSAFE (ADC ${telemetry.gasRawAdc ?? '--'})`,
+      };
+    }
+    const adcText = telemetry.gasRawAdc != null ? ` (ADC ${telemetry.gasRawAdc})` : '';
+    return {
+      understood: true,
+      action: 'QUERY_GAS',
+      replyText: `The gas sensor level is currently SAFE${adcText}. Combustible gas concentration is well below the danger threshold.`,
+      details: `MQ-2 Sensor: SAFE${adcText}`,
+    };
+  }
+
+  // Mute Emergency Siren: "Mute emergency siren." / "Mute siren." / "Silence siren."
+  if (
+    text.includes('mute emergency siren') ||
+    text.includes('mute siren') ||
+    text.includes('silence siren') ||
+    text.includes('stop siren')
+  ) {
+    return {
+      understood: true,
+      action: 'MUTE_SIREN',
+      replyText: 'Emergency siren has been muted. Note that physical safety lockout and exhaust ventilation remain active.',
+      details: 'Website Siren Muted (Safety Lockout Maintained)',
+    };
+  }
+
+  // Prevent voice commands from bypassing or clearing confirmed emergency without safety verification
+  if (
+    text.includes('clear emergency') ||
+    text.includes('bypass emergency') ||
+    text.includes('reset emergency') ||
+    text.includes('dismiss emergency') ||
+    text.includes('cancel emergency')
+  ) {
+    if (isLockoutActive) {
+      return {
+        understood: true,
+        action: 'UNKNOWN',
+        safetyBlocked: true,
+        replyText: 'Safety Interlock: Emergency status cannot be cleared by voice command while combustible gas is detected or before safe verification.',
+        details: 'Clear Emergency blocked: Safety Verification Required',
+      };
+    }
+  }
 
   // -------------------------------------------------------------------------
   // 1. Master Control: All Devices ON / ALL OFF
@@ -56,8 +142,8 @@ export function parseVoiceCommand(
       understood: true,
       action: 'ALL_ON',
       desiredState: true,
-      replyText: 'Commanding all active 5 relay channels ON.',
-      details: 'All 5 relays commanded ON',
+      replyText: 'Commanding all active 3 normal user-controlled relays ON.',
+      details: 'All 3 normal relays commanded ON',
     };
   }
 
@@ -75,8 +161,8 @@ export function parseVoiceCommand(
       understood: true,
       action: 'ALL_OFF',
       desiredState: false,
-      replyText: 'Switching off all active relay channels.',
-      details: 'All 5 relays commanded OFF',
+      replyText: 'Switching off all normal controlled devices.',
+      details: 'All 3 normal relays commanded OFF',
     };
   }
 
@@ -204,7 +290,7 @@ export function parseVoiceCommand(
     }
   }
 
-  // Channel 5: Exhaust Fan (GPIO 32)
+  // Channel 5: Dedicated Emergency Exhaust Fan (GPIO 32)
   if (
     text.includes('exhaust') || 
     text.includes('ventilation') || 
@@ -214,13 +300,24 @@ export function parseVoiceCommand(
     const exhaust = devices.find(d => d.relayChannel === 5 || d.type === 'exhaust_fan' || d.id === 'relay-exhaust');
     if (exhaust && (hasTurnOn || hasTurnOff || text.includes('emergency'))) {
       const state = hasTurnOff ? false : true;
+      if (!state && isLockoutActive) {
+        return {
+          understood: true,
+          action: 'TOGGLE_DEVICE',
+          targetDeviceId: exhaust.id,
+          desiredState: false,
+          safetyBlocked: true,
+          replyText: 'Safety Alert: Dedicated emergency exhaust must remain active during gas emergency. Deactivation is blocked until gas levels return to safe range.',
+          details: 'Exhaust Fan OFF blocked by Active Gas Emergency Interlock',
+        };
+      }
       return {
         understood: true,
         action: 'TOGGLE_DEVICE',
         targetDeviceId: exhaust.id,
         desiredState: state,
-        replyText: `Kitchen Exhaust Fan turned ${state ? 'ON' : 'OFF'}.`,
-        details: `Relay 5 (GPIO ${exhaust.gpioPin}) -> ${state ? 'VENTILATING' : 'STANDBY'}`,
+        replyText: `Dedicated Emergency Exhaust Fan turned ${state ? 'ON' : 'OFF'}.`,
+        details: `Emergency Exhaust Fan (GPIO ${exhaust.gpioPin}) -> ${state ? 'VENTILATING' : 'STANDBY'}`,
       };
     }
   }

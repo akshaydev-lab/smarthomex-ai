@@ -21,9 +21,12 @@ export const DevicesPage: React.FC = () => {
   const [selectedRoom, setSelectedRoom] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
-  const rooms = ['all', 'Living Room', 'Master Bedroom', 'Utility / Pump Room', 'Outdoor / Street', 'Kitchen Area'];
+  const rooms = ['all', 'Living Room', 'Master Bedroom', 'Utility / Pump Room'];
 
-  const filteredDevices = devices.filter(device => {
+  const normalDevices = devices.filter(d => d.type !== 'exhaust_fan' && d.relayChannel <= 3);
+  const exhaustDevice = devices.find(d => d.type === 'exhaust_fan' || d.gpioPin === 32);
+
+  const filteredDevices = normalDevices.filter(device => {
     const matchesRoom = selectedRoom === 'all' || device.room === selectedRoom;
     const matchesSearch = device.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           device.room.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -34,7 +37,7 @@ export const DevicesPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Master 5-Channel Relays Controller */}
+      {/* Master 3-Channel Relays Controller */}
       <MasterControl />
 
       {/* Hardware Bridge Diagnostic & Testing Controller */}
@@ -54,7 +57,7 @@ export const DevicesPage: React.FC = () => {
                   : 'text-slate-400 hover:text-slate-200 bg-slate-900/60 border border-slate-800'
               }`}
             >
-              {room === 'all' ? 'All Rooms & Hardware' : room}
+              {room === 'all' ? 'All Rooms & Household Appliances' : room}
             </button>
           ))}
         </div>
@@ -65,14 +68,14 @@ export const DevicesPage: React.FC = () => {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search device or GPIO (14, 25, 26, 27, 32)..."
+            placeholder="Search appliance or GPIO (25, 26, 27)..."
             className="glass-input w-full pl-9 pr-3 py-1.5 rounded-xl text-xs text-slate-200 placeholder:text-slate-400"
           />
         </div>
       </Card>
 
       {/* ===================================================================== */}
-      {/* SECTION 1: 5-CHANNEL ESP32 ACTIVE-LOW RELAYS                          */}
+      {/* SECTION 1: 3-CHANNEL ESP32 ACTIVE-LOW HOUSEHOLD RELAYS                */}
       {/* ===================================================================== */}
       {filteredDevices.length > 0 && (
         <div className="space-y-3">
@@ -83,13 +86,13 @@ export const DevicesPage: React.FC = () => {
               </div>
               <div>
                 <h2 className="text-sm sm:text-base font-bold text-slate-100 flex items-center gap-2">
-                  5-Channel ESP32 Active-LOW Relay Controller
+                  3-Channel Active-LOW Household Appliance Relays
                   <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-semibold">
-                    Optocoupler & DC Driver Isolated
+                    Optocoupler Isolated
                   </span>
                 </h2>
                 <p className="text-xs text-slate-400">
-                  Ch 1: Light (GPIO 25) • Ch 2: Fan (GPIO 26) • Ch 3: Motor (GPIO 27) • Ch 4: Street Light (GPIO 14) • Ch 5: Exhaust Fan (GPIO 32)
+                  Ch 1: Light (GPIO 25) • Ch 2: Fan (GPIO 26) • Ch 3: Motor (GPIO 27)
                 </p>
               </div>
             </div>
@@ -99,7 +102,7 @@ export const DevicesPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {filteredDevices.map(device => (
               <DeviceCard key={device.id} device={device} onToggle={toggleDevice} />
             ))}
@@ -108,7 +111,7 @@ export const DevicesPage: React.FC = () => {
       )}
 
       {/* ===================================================================== */}
-      {/* SECTION 2: HAZARDOUS ATMOSPHERE & EXHAUST INTERLOCK ARCHITECTURE      */}
+      {/* SECTION 2: DEDICATED EMERGENCY SAFETY SYSTEM & EXHAUST VENTILATION    */}
       {/* ===================================================================== */}
       <Card className="p-5 bg-gradient-to-br from-teal-950/20 via-slate-900/90 to-slate-950 border-teal-500/30 flex flex-col justify-between">
         <div>
@@ -116,25 +119,56 @@ export const DevicesPage: React.FC = () => {
             <div className="flex items-center gap-2">
               <ShieldAlert className="h-5 w-5 text-teal-400" />
               <h3 className="font-bold text-sm text-slate-100">
-                Hazardous Atmosphere & Spark Prevention Architecture
+                Dedicated Emergency Exhaust & Hazardous Atmosphere Safety System
               </h3>
             </div>
-            <Badge variant={gasSafetyState.exhaustSafetyCertified ? 'emerald' : 'amber'} size="sm">
-              {gasSafetyState.exhaustSafetyCertified ? 'ATEX/IECEx Certified' : 'Uncertified Fan (Inhibited)'}
+            <Badge variant={gasSafetyState.exhaustFanActive ? 'rose' : 'teal'} size="sm">
+              {gasSafetyState.exhaustFanActive ? 'VENTILATING (GPIO 32 ON)' : 'STANDBY (GPIO 32 OFF)'}
             </Badge>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800">
+              <span className="text-xs font-mono text-slate-400 block mb-1">Dedicated Exhaust Relay</span>
+              <div className="flex items-baseline gap-2">
+                <span className={`text-xl font-bold font-mono ${gasSafetyState.exhaustFanActive ? 'text-emerald-400' : 'text-slate-200'}`}>
+                  {gasSafetyState.exhaustFanActive ? 'ACTIVE (ON)' : 'STANDBY (OFF)'}
+                </span>
+                <span className="text-xs text-slate-400 font-mono">GPIO 32</span>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-2">
+                Isolated DC driver for combustible gas extraction. Cannot be manually deactivated during emergency lockout.
+              </p>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800">
+              <span className="text-xs font-mono text-slate-400 block mb-1">Appliance Shedding Status</span>
+              <div className="flex items-baseline gap-2">
+                <span className={`text-xl font-bold font-mono ${gasSafetyState.lockoutStatus === 'CRITICAL' ? 'text-rose-400' : 'text-emerald-400'}`}>
+                  {gasSafetyState.lockoutStatus === 'CRITICAL' ? 'SHED & LOCKED' : 'NORMAL / ARMED'}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-2">
+                Relay 1 (25), Relay 2 (26), Relay 3 (27) cut immediately on confirmed gas detection.
+              </p>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800">
+              <span className="text-xs font-mono text-slate-400 block mb-1">Auto-Recovery Sequence</span>
+              <div className="flex items-baseline gap-2">
+                <span className="text-xl font-bold font-mono text-cyan-300">
+                  {gasSafetyState.recoveryStatus || 'IDLE'}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-2">
+                Restores pre-emergency states for Light, Fan, Motor after MQ-2 stabilizes below 900 ADC for 5s.
+              </p>
+            </div>
           </div>
 
           <div className="mt-3 space-y-2 text-xs text-slate-300 leading-relaxed">
             <p>
-              <strong className="text-teal-300">Why a dedicated switching driver on GPIO 32?</strong> The kitchen DC exhaust fan is driven via an isolated DC switching driver on GPIO 32 to ensure dedicated ventilation control without burdening AC relay channels.
-            </p>
-            <p>
-              <strong className="text-rose-300">Strict Life-Safety Rule:</strong> Switching mechanical relay contacts or running ordinary brushed DC motors generates electrical arcs that ignite combustible LPG/methane fuel-air mixtures. Automatic exhaust activation is <strong>strictly disabled during gas emergency</strong> unless the complete assembly (fan, motor, relay, wiring, and enclosure) is certified explosion-proof.
-            </p>
-            <p className="font-mono text-[11px] text-slate-400 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800">
-              • Physical Relay: Relay 5 Active-LOW DC Switching Driver (GPIO 32)<br />
-              • Control Logic: Manual Switch / Automatic Emergency Recovery Ventilation<br />
-              • Emergency Action: {gasSafetyState.exhaustSafetyCertified ? 'ACTIVATED (Certified explosion-proof mode)' : 'LOCKED OUT (Spark ignition prevention)'}
+              <strong className="text-teal-300">Why isolated on GPIO 32?</strong> The emergency exhaust fan is driven on dedicated GPIO 32 completely separated from household appliance controls to ensure guaranteed ventilation during gas incidents without sparking risk from general lighting and heavy motor relays.
             </p>
           </div>
         </div>
@@ -177,49 +211,40 @@ export const DevicesPage: React.FC = () => {
             </thead>
             <tbody className="divide-y divide-slate-800/50">
               <tr className="bg-slate-950/40">
-                <td className="py-2.5 px-3 font-bold text-slate-300">5-Channel Relays</td>
+                <td className="py-2.5 px-3 font-bold text-slate-300">Appliance Relays</td>
                 <td className="py-2.5 px-3">Channel 1</td>
                 <td className="py-2.5 px-3 text-cyan-300 font-semibold">Living Room Light</td>
                 <td className="py-2.5 px-3 text-cyan-400 font-bold">GPIO 25</td>
                 <td className="py-2.5 px-3">Active LOW (0V)</td>
                 <td className="py-2.5 px-3">100 W</td>
-                <td className="py-2.5 px-3 text-slate-400">Emergency Shedding • Auto-Restoration Capable</td>
+                <td className="py-2.5 px-3 text-slate-400">Emergency Shedding • Snapshot Restoration</td>
               </tr>
               <tr className="bg-slate-950/40">
-                <td className="py-2.5 px-3 font-bold text-slate-300">5-Channel Relays</td>
+                <td className="py-2.5 px-3 font-bold text-slate-300">Appliance Relays</td>
                 <td className="py-2.5 px-3">Channel 2</td>
                 <td className="py-2.5 px-3 text-cyan-300 font-semibold">Master Bedroom Ceiling Fan</td>
                 <td className="py-2.5 px-3 text-cyan-400 font-bold">GPIO 26</td>
                 <td className="py-2.5 px-3">Active LOW (0V)</td>
                 <td className="py-2.5 px-3">75 W</td>
-                <td className="py-2.5 px-3 text-slate-400">Emergency Shedding • Auto-Restoration Capable</td>
+                <td className="py-2.5 px-3 text-slate-400">Emergency Shedding • Snapshot Restoration</td>
               </tr>
               <tr className="bg-slate-950/40">
-                <td className="py-2.5 px-3 font-bold text-slate-300">5-Channel Relays</td>
+                <td className="py-2.5 px-3 font-bold text-slate-300">Appliance Relays</td>
                 <td className="py-2.5 px-3">Channel 3</td>
                 <td className="py-2.5 px-3 text-cyan-300 font-semibold">Water Booster Motor</td>
                 <td className="py-2.5 px-3 text-cyan-400 font-bold">GPIO 27</td>
                 <td className="py-2.5 px-3">Active LOW (0V)</td>
                 <td className="py-2.5 px-3">750 W</td>
-                <td className="py-2.5 px-3 text-emerald-400">Max 30m Auto-Cutoff • Gas Lockout Tripped</td>
-              </tr>
-              <tr className="bg-slate-950/40">
-                <td className="py-2.5 px-3 font-bold text-slate-300">5-Channel Relays</td>
-                <td className="py-2.5 px-3">Channel 4</td>
-                <td className="py-2.5 px-3 text-cyan-300 font-semibold">Street Light</td>
-                <td className="py-2.5 px-3 text-cyan-400 font-bold">GPIO 14</td>
-                <td className="py-2.5 px-3">Active LOW (0V)</td>
-                <td className="py-2.5 px-3">60 W</td>
-                <td className="py-2.5 px-3 text-slate-400">Outdoor / Perimeter Security Lighting</td>
+                <td className="py-2.5 px-3 text-emerald-400">Max 30m Auto-Cutoff • Emergency Shedding • Snapshot Restoration</td>
               </tr>
               <tr className="bg-teal-950/20">
-                <td className="py-2.5 px-3 font-bold text-teal-300">5-Channel Relays</td>
-                <td className="py-2.5 px-3 text-teal-200">Channel 5</td>
+                <td className="py-2.5 px-3 font-bold text-teal-300">Safety System</td>
+                <td className="py-2.5 px-3 text-teal-200">Dedicated Relay</td>
                 <td className="py-2.5 px-3 text-teal-200 font-semibold">Kitchen DC Exhaust Fan</td>
                 <td className="py-2.5 px-3 text-teal-400 font-bold">GPIO 32</td>
                 <td className="py-2.5 px-3 text-teal-300">Active LOW (0V)</td>
                 <td className="py-2.5 px-3">60 W</td>
-                <td className="py-2.5 px-3 text-teal-300 font-semibold">Manual / Auto Gas Recovery Ventilation</td>
+                <td className="py-2.5 px-3 text-teal-300 font-semibold">Dedicated Safety Exhaust • Auto-Ventilation on Gas Danger</td>
               </tr>
               {/* Sensor & Alert Peripherals */}
               <tr className="bg-slate-900/40">

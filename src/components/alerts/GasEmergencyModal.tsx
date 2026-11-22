@@ -152,7 +152,7 @@ export const GasEmergencyModal: React.FC = () => {
             <span className="text-[10px] text-slate-400">{currentDateStr}</span>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs font-mono">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
             <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
               <span className="text-slate-400 block text-[10px]">Relay 1 (Light 25)</span>
               <span className="font-bold text-rose-400">OFF (LOCKED)</span>
@@ -169,14 +169,9 @@ export const GasEmergencyModal: React.FC = () => {
             </div>
 
             <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
-              <span className="text-slate-400 block text-[10px]">Relay 4 (Street 14)</span>
-              <span className="font-bold text-rose-400">OFF (LOCKED)</span>
-            </div>
-
-            <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
-              <span className="text-slate-400 block text-[10px]">Relay 5 (Exhaust 32)</span>
+              <span className="text-slate-400 block text-[10px]">Safety Exhaust (32)</span>
               <span className={`font-bold ${gasSafetyState.exhaustFanActive ? 'text-emerald-400' : 'text-amber-400'}`}>
-                {gasSafetyState.exhaustFanActive ? 'ON (ACTIVE)' : 'OFF (STANDBY)'}
+                {gasSafetyState.exhaustFanActive ? 'ON (VENTILATING)' : 'OFF (STANDBY)'}
               </span>
             </div>
           </div>
@@ -192,7 +187,7 @@ export const GasEmergencyModal: React.FC = () => {
             <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
               <span className="text-slate-400 block text-[10px]">Buzzer (GPIO 33)</span>
               <span className={`font-bold ${isSilenced ? 'text-amber-400' : 'text-rose-400'}`}>
-                {isSilenced ? 'SILENCED (Active)' : 'ACTIVE (960Hz)'}
+                {isSilenced ? 'SILENCED (Active)' : 'ACTIVE (200ms Cadence)'}
               </span>
             </div>
 
