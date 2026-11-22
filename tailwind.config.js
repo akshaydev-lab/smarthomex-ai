@@ -8,38 +8,17 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Emerald Smart Control Center Palette
-        background: {
-          main: '#0B0F12',
-          secondary: '#111820',
-          sidebar: '#080D11',
-          card: '#141C23',
-          'card-hover': '#1A242E',
-        },
-        border: {
-          subtle: 'rgba(255, 255, 255, 0.08)',
-          'hover-emerald': 'rgba(16, 185, 129, 0.35)',
-        },
         brand: {
-          dark: '#0B0F12',
-          surface: '#111820',
-          sidebar: '#080D11',
-          card: '#141C23',
-          'card-hover': '#1A242E',
-          border: 'rgba(255, 255, 255, 0.08)',
-          'border-highlight': 'rgba(16, 185, 129, 0.35)',
-        },
-        emerald: {
-          400: '#34D399',
-          500: '#10B981',
-          800: '#065F46',
-          900: '#064E3B',
-          950: '#022c22',
+          dark: '#050914',
+          surface: '#0a1024',
+          card: '#0f172e',
+          'card-hover': '#152042',
+          border: 'rgba(56, 189, 248, 0.12)',
+          'border-highlight': 'rgba(34, 211, 238, 0.35)',
         },
         cyan: {
-          400: '#22d3ee',
-          500: '#06b6d4',
-          600: '#0891b2',
+          450: '#15b8d6',
+          550: '#0284c7',
         },
       },
       fontFamily: {
@@ -47,11 +26,11 @@ export default {
         mono: ['"JetBrains Mono"', 'monospace'],
       },
       boxShadow: {
-        'glow-emerald': '0 0 25px -5px rgba(16, 185, 129, 0.35)',
-        'glow-cyan': '0 0 25px -5px rgba(6, 182, 212, 0.35)',
-        'glow-blue': '0 0 25px -5px rgba(59, 130, 246, 0.35)',
-        'glow-danger': '0 0 25px -5px rgba(239, 68, 68, 0.35)',
-        'glass': '0 8px 32px 0 rgba(0, 0, 0, 0.45)',
+        'glow-cyan': '0 0 25px -5px rgba(6, 182, 212, 0.4)',
+        'glow-teal': '0 0 25px -5px rgba(20, 184, 166, 0.4)',
+        'glow-blue': '0 0 25px -5px rgba(59, 130, 246, 0.4)',
+        'glow-danger': '0 0 25px -5px rgba(239, 68, 68, 0.4)',
+        'glass': '0 8px 32px 0 rgba(0, 0, 0, 0.37)',
       },
       animation: {
         'pulse-subtle': 'pulseSubtle 3s ease-in-out infinite',
@@ -67,10 +46,10 @@ export default {
         },
         glowPulse: {
           '0%': {
-            boxShadow: '0 0 10px rgba(16, 185, 129, 0.25)',
+            boxShadow: '0 0 10px rgba(6, 182, 212, 0.25)',
           },
           '100%': {
-            boxShadow: '0 0 25px rgba(16, 185, 129, 0.55), 0 0 40px rgba(6, 182, 212, 0.2)',
+            boxShadow: '0 0 25px rgba(6, 182, 212, 0.55), 0 0 40px rgba(20, 184, 166, 0.2)',
           },
         },
         fadeIn: {

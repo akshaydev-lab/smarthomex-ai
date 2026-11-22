@@ -17,7 +17,7 @@ export const HumidityChart: React.FC<{ data: EnergyHourlyData[] }> = ({ data }) 
   const isDemoMode = !import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true';
 
   return (
-    <Card className="p-4 sm:p-5 bg-[#141C23]/90 border-white/[0.08]">
+    <Card className="p-4 sm:p-5">
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <div className="p-2 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400">

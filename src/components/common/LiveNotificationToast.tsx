@@ -6,7 +6,6 @@ import {
   Flame, 
   Cpu, 
   X, 
-  Zap, 
   Clock 
 } from 'lucide-react';
 import { useSmartHome } from '../../hooks/useSmartHome';
@@ -26,7 +25,7 @@ export const LiveNotificationToast: React.FC = () => {
       case 'error':
         return <AlertCircle className="h-5 w-5 text-rose-400 shrink-0" />;
       case 'gas_emergency':
-        return <Flame className="h-5 w-5 text-red-400 shrink-0 animate-bounce" />;
+        return <Flame className="h-5 w-5 text-rose-400 shrink-0 animate-bounce" />;
       case 'info':
       default:
         return <Cpu className="h-5 w-5 text-cyan-400 shrink-0" />;
@@ -36,16 +35,16 @@ export const LiveNotificationToast: React.FC = () => {
   const getToastBorder = (type: LiveToast['type']) => {
     switch (type) {
       case 'success':
-        return 'border-emerald-500/40 bg-[#0B1510]/95 shadow-[0_4px_20px_rgba(16,185,129,0.2)]';
+        return 'border-emerald-500/40 bg-slate-900/95 shadow-[0_4px_20px_rgba(16,185,129,0.2)]';
       case 'warning':
-        return 'border-amber-500/40 bg-[#171208]/95 shadow-[0_4px_20px_rgba(245,158,11,0.2)]';
+        return 'border-amber-500/40 bg-slate-900/95 shadow-[0_4px_20px_rgba(245,158,11,0.2)]';
       case 'error':
-        return 'border-rose-500/40 bg-[#18090C]/95 shadow-[0_4px_20px_rgba(244,63,94,0.2)]';
+        return 'border-rose-500/40 bg-slate-900/95 shadow-[0_4px_20px_rgba(244,63,94,0.2)]';
       case 'gas_emergency':
-        return 'border-red-500 bg-[#25080E]/95 shadow-[0_4px_25px_rgba(239,68,68,0.4)] animate-pulse-subtle';
+        return 'border-rose-500 bg-rose-950/95 shadow-[0_4px_25px_rgba(244,63,94,0.4)] animate-pulse-subtle';
       case 'info':
       default:
-        return 'border-cyan-500/30 bg-[#0A131A]/95 shadow-[0_4px_20px_rgba(6,182,212,0.15)]';
+        return 'border-cyan-500/30 bg-slate-900/95 shadow-[0_4px_20px_rgba(6,182,212,0.15)]';
     }
   };
 
@@ -68,7 +67,7 @@ export const LiveNotificationToast: React.FC = () => {
                   {toast.title}
                 </span>
                 {toast.gpio != null && (
-                  <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-white/[0.08] text-emerald-300 border border-white/[0.06]">
+                  <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-cyan-300 border border-slate-700">
                     GPIO {toast.gpio}
                   </span>
                 )}
@@ -86,7 +85,7 @@ export const LiveNotificationToast: React.FC = () => {
           <button
             onClick={() => dismissToast(toast.id)}
             aria-label="Dismiss notification"
-            className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors shrink-0"
+            className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors shrink-0 cursor-pointer"
           >
             <X className="h-3.5 w-3.5" />
           </button>

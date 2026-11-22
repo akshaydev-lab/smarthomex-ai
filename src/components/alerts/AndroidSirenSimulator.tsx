@@ -50,16 +50,16 @@ export const AndroidSirenSimulator: React.FC = () => {
   const currentTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   return (
-    <div className="bg-[#141C23]/90 border border-white/[0.08] rounded-3xl p-5 shadow-2xl">
-      <div className="flex items-center justify-between pb-4 border-b border-white/[0.08] gap-3 flex-wrap">
+    <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-2xl">
+      <div className="flex items-center justify-between pb-4 border-b border-slate-800 gap-3 flex-wrap">
         <div className="flex items-center gap-2.5">
-          <div className="h-10 w-10 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 flex items-center justify-center">
+          <div className="h-10 w-10 rounded-2xl bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 flex items-center justify-center">
             <Smartphone className="h-5 w-5" />
           </div>
           <div>
             <h3 className="font-bold text-sm sm:text-base text-white flex items-center gap-2">
               Android Mobile Emergency Siren & Notification App
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-semibold">
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-semibold">
                 FCM High-Priority Channel
               </span>
             </h3>
@@ -70,11 +70,11 @@ export const AndroidSirenSimulator: React.FC = () => {
         </div>
 
         {/* Simulator View Controls */}
-        <div className="flex items-center gap-1.5 bg-[#0B0F12] p-1 rounded-xl border border-white/[0.08] text-xs font-mono">
+        <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs font-mono">
           <button
             onClick={() => setActiveTab('screen')}
             className={`px-3 py-1 rounded-lg transition-colors cursor-pointer ${
-              activeTab === 'screen' ? 'bg-emerald-600 text-white font-bold shadow-glow-emerald' : 'text-slate-400 hover:text-white'
+              activeTab === 'screen' ? 'bg-cyan-600 text-white font-bold' : 'text-slate-400 hover:text-white'
             }`}
           >
             Red Emergency Screen
@@ -82,7 +82,7 @@ export const AndroidSirenSimulator: React.FC = () => {
           <button
             onClick={() => setActiveTab('notification')}
             className={`px-3 py-1 rounded-lg transition-colors cursor-pointer ${
-              activeTab === 'notification' ? 'bg-emerald-600 text-white font-bold shadow-glow-emerald' : 'text-slate-400 hover:text-white'
+              activeTab === 'notification' ? 'bg-cyan-600 text-white font-bold' : 'text-slate-400 hover:text-white'
             }`}
           >
             Heads-Up Notification Drawer

@@ -41,15 +41,15 @@ export const AnalyticsPage: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Top Header & Export Action */}
-      <Card className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#141C23]/90 border-white/[0.08]">
+      <Card className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-cyan-500/20">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 text-slate-950 font-bold shadow-glow-emerald">
+          <div className="p-2.5 rounded-xl bg-gradient-to-tr from-cyan-500 to-teal-400 text-slate-950 font-bold shadow-glow-cyan">
             <Zap className="h-5 w-5" />
           </div>
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-lg font-bold text-slate-100">INA219 Precision Energy Intelligence Center</h2>
-              <Badge variant="emerald" size="sm">Hardware Monitored</Badge>
+              <Badge variant="teal" size="sm">Hardware Monitored</Badge>
             </div>
             <p className="text-xs text-slate-400 font-mono">
               High-side DC/AC voltage, current shunt & real-time Riemann energy accumulation

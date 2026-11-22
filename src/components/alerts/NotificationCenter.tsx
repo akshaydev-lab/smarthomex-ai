@@ -96,10 +96,10 @@ export const NotificationCenter: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Top Header & Simulation Triggers */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 rounded-3xl bg-[#141C23]/90 border border-white/[0.08]">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 rounded-3xl bg-slate-900 border border-slate-800">
         <div>
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
-            <Radio className="h-5 w-5 text-emerald-400" />
+            <Radio className="h-5 w-5 text-cyan-400" />
             Dashboard Notification & Alert Center
           </h2>
           <p className="text-xs text-slate-400 mt-0.5">
@@ -124,19 +124,19 @@ export const NotificationCenter: React.FC = () => {
           </button>
           <button
             onClick={triggerWifiDisconnectedAlert}
-            className="px-2.5 py-1 rounded-lg bg-[#0B0F12] hover:bg-slate-800 text-slate-300 border border-white/[0.08] text-[11px] font-mono cursor-pointer"
+            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[11px] font-mono cursor-pointer"
           >
             Wi-Fi Lost
           </button>
           <button
             onClick={triggerDeviceOfflineAlert}
-            className="px-2.5 py-1 rounded-lg bg-[#0B0F12] hover:bg-slate-800 text-slate-300 border border-white/[0.08] text-[11px] font-mono cursor-pointer"
+            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[11px] font-mono cursor-pointer"
           >
             Node Offline
           </button>
           <button
             onClick={triggerUnexpectedRestartAlert}
-            className="px-2.5 py-1 rounded-lg bg-[#0B0F12] hover:bg-slate-800 text-slate-300 border border-white/[0.08] text-[11px] font-mono cursor-pointer"
+            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[11px] font-mono cursor-pointer"
           >
             Reboot
           </button>
@@ -155,8 +155,8 @@ export const NotificationCenter: React.FC = () => {
           onClick={() => setSelectedCategory('all')}
           className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
             selectedCategory === 'all'
-              ? 'bg-emerald-500 text-slate-950 font-bold shadow-glow-emerald'
-              : 'bg-[#141C23] text-slate-400 hover:text-white border border-white/[0.08]'
+              ? 'bg-cyan-600 text-white shadow-glow-cyan'
+              : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
           }`}
         >
           <Filter className="h-3.5 w-3.5" />
@@ -167,8 +167,8 @@ export const NotificationCenter: React.FC = () => {
           onClick={() => setSelectedCategory('critical')}
           className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
             selectedCategory === 'critical'
-              ? 'bg-rose-600 text-white shadow-glow-danger font-bold'
-              : 'bg-[#141C23] text-rose-300 hover:bg-rose-950/40 border border-white/[0.08]'
+              ? 'bg-rose-600 text-white shadow-glow-danger'
+              : 'bg-slate-900 text-rose-300 hover:bg-rose-950/40 border border-slate-800'
           }`}
         >
           <Flame className="h-3.5 w-3.5 text-rose-400" />
@@ -179,8 +179,8 @@ export const NotificationCenter: React.FC = () => {
           onClick={() => setSelectedCategory('warning')}
           className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
             selectedCategory === 'warning'
-              ? 'bg-amber-600 text-white font-bold'
-              : 'bg-[#141C23] text-amber-300 hover:bg-amber-950/40 border border-white/[0.08]'
+              ? 'bg-amber-600 text-white'
+              : 'bg-slate-900 text-amber-300 hover:bg-amber-950/40 border border-slate-800'
           }`}
         >
           <AlertTriangle className="h-3.5 w-3.5 text-amber-400" />
@@ -191,11 +191,11 @@ export const NotificationCenter: React.FC = () => {
           onClick={() => setSelectedCategory('device')}
           className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
             selectedCategory === 'device'
-              ? 'bg-emerald-600 text-white font-bold'
-              : 'bg-[#141C23] text-emerald-300 hover:bg-emerald-950/40 border border-white/[0.08]'
+              ? 'bg-indigo-600 text-white'
+              : 'bg-slate-900 text-indigo-300 hover:bg-indigo-950/40 border border-slate-800'
           }`}
         >
-          <Cpu className="h-3.5 w-3.5 text-emerald-400" />
+          <Cpu className="h-3.5 w-3.5 text-indigo-400" />
           Device Alerts ({counts.device})
         </button>
 
@@ -203,8 +203,8 @@ export const NotificationCenter: React.FC = () => {
           onClick={() => setSelectedCategory('sensor_fault')}
           className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
             selectedCategory === 'sensor_fault'
-              ? 'bg-orange-600 text-white font-bold'
-              : 'bg-[#141C23] text-orange-300 hover:bg-orange-950/40 border border-white/[0.08]'
+              ? 'bg-orange-600 text-white'
+              : 'bg-slate-900 text-orange-300 hover:bg-orange-950/40 border border-slate-800'
           }`}
         >
           <Unplug className="h-3.5 w-3.5 text-orange-400" />
@@ -215,8 +215,8 @@ export const NotificationCenter: React.FC = () => {
           onClick={() => setSelectedCategory('recovery')}
           className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
             selectedCategory === 'recovery'
-              ? 'bg-emerald-500 text-slate-950 font-bold shadow-glow-emerald'
-              : 'bg-[#141C23] text-emerald-300 hover:bg-emerald-950/40 border border-white/[0.08]'
+              ? 'bg-emerald-600 text-white'
+              : 'bg-slate-900 text-emerald-300 hover:bg-emerald-950/40 border border-slate-800'
           }`}
         >
           <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
@@ -227,8 +227,8 @@ export const NotificationCenter: React.FC = () => {
           onClick={() => setSelectedCategory('history')}
           className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
             selectedCategory === 'history'
-              ? 'bg-slate-700 text-white font-bold'
-              : 'bg-[#141C23] text-slate-400 hover:text-white border border-white/[0.08]'
+              ? 'bg-slate-700 text-white'
+              : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
           }`}
         >
           <History className="h-3.5 w-3.5" />
@@ -239,7 +239,7 @@ export const NotificationCenter: React.FC = () => {
       {/* Alert Cards Feed */}
       <div className="space-y-3">
         {filteredAlerts.length === 0 ? (
-          <div className="p-12 text-center rounded-3xl bg-[#141C23]/60 border border-white/[0.08] text-slate-400 font-mono text-xs">
+          <div className="p-12 text-center rounded-3xl bg-slate-900/50 border border-slate-800 text-slate-400 font-mono text-xs">
             No notification events found for the selected filter.
           </div>
         ) : (
@@ -251,10 +251,10 @@ export const NotificationCenter: React.FC = () => {
                 key={alert.id}
                 className={`p-4 rounded-2xl border transition-all ${
                   isDanger
-                    ? 'bg-gradient-to-r from-rose-950/50 via-[#141C23] to-[#0B0F12] border-rose-500/50 shadow-[0_0_20px_rgba(244,63,94,0.15)]'
+                    ? 'bg-gradient-to-r from-rose-950/50 via-slate-900 to-slate-950 border-rose-500/50 shadow-[0_0_20px_rgba(244,63,94,0.15)]'
                     : isRecovery
-                    ? 'bg-gradient-to-r from-emerald-950/30 via-[#141C23] to-[#0B0F12] border-emerald-500/40'
-                    : 'bg-[#141C23]/90 border-white/[0.08]'
+                    ? 'bg-gradient-to-r from-emerald-950/30 via-slate-900 to-slate-950 border-emerald-500/40'
+                    : 'bg-slate-900/80 border-slate-800'
                 }`}
               >
                 <div className="flex items-start justify-between gap-3">

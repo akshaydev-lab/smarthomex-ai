@@ -25,16 +25,16 @@ export const INA219BackendNotice: React.FC = () => {
   };
 
   return (
-    <Card className="p-4 sm:p-5 bg-[#141C23]/90 border-white/[0.08]">
+    <Card className="p-4 sm:p-5 border-cyan-500/20 bg-slate-950/70">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+          <div className="p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
             <Database className="h-5 w-5" />
           </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-base font-bold text-slate-100">Supabase Backend & Continuous Integration Architecture</h3>
-              <Badge variant="emerald" size="sm">Time-Series Ready</Badge>
+              <Badge variant="teal" size="sm">Time-Series Ready</Badge>
               {!import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true' && (
                 <Badge variant="demo" size="sm">DEMO PROTOCOL</Badge>
               )}

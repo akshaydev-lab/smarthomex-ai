@@ -31,8 +31,138 @@ async function sha256Hex(text: string): Promise<string> {
 }
 
 // ------------------------------------------------------------------------------
-// Helper: Dispatch Android Push Notification via FCM
+// Firebase Cloud Messaging (FCM) HTTP v1 Dispatcher with OAuth2 Web Crypto
 // ------------------------------------------------------------------------------
+interface FirebaseCredentials {
+  projectId: string;
+  clientEmail: string;
+  privateKey: string;
+}
+
+interface FcmDispatchResult {
+  status: 'sent' | 'failed' | 'unconfigured' | 'no_tokens';
+  sentCount: number;
+  failedCount: number;
+  messageIds: string[];
+  error?: string;
+}
+
+function getFirebaseCredentials(): FirebaseCredentials | null {
+  const saJson = Deno.env.get('FIREBASE_SERVICE_ACCOUNT') || Deno.env.get('FCM_SERVICE_ACCOUNT');
+  if (saJson) {
+    try {
+      const parsed = JSON.parse(saJson);
+      if (parsed.project_id && parsed.client_email && parsed.private_key) {
+        return {
+          projectId: parsed.project_id,
+          clientEmail: parsed.client_email,
+          privateKey: parsed.private_key,
+        };
+      }
+    } catch (_e) {}
+  }
+
+  const projectId = Deno.env.get('FIREBASE_PROJECT_ID');
+  const clientEmail = Deno.env.get('FIREBASE_CLIENT_EMAIL');
+  const privateKey = Deno.env.get('FIREBASE_PRIVATE_KEY');
+
+  if (projectId && clientEmail && privateKey) {
+    return { projectId, clientEmail, privateKey };
+  }
+
+  return null;
+}
+
+function base64UrlEncode(strOrBytes: string | Uint8Array): string {
+  let base64: string;
+  if (typeof strOrBytes === 'string') {
+    base64 = btoa(strOrBytes);
+  } else {
+    let binary = '';
+    const len = strOrBytes.byteLength;
+    for (let i = 0; i < len; i++) {
+      binary += String.fromCharCode(strOrBytes[i]);
+    }
+    base64 = btoa(binary);
+  }
+  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function pemToPkcs8(pem: string): Uint8Array {
+  const clean = pem
+    .replace(/-----BEGIN (?:RSA )?PRIVATE KEY-----/g, '')
+    .replace(/-----END (?:RSA )?PRIVATE KEY-----/g, '')
+    .replace(/\s+/g, '');
+  const binaryStr = atob(clean);
+  const bytes = new Uint8Array(binaryStr.length);
+  for (let i = 0; i < binaryStr.length; i++) {
+    bytes[i] = binaryStr.charCodeAt(i);
+  }
+  return bytes;
+}
+
+let cachedOAuthToken: { token: string; expiresAt: number } | null = null;
+
+async function getGoogleOAuth2AccessToken(creds: FirebaseCredentials): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  if (cachedOAuthToken && cachedOAuthToken.expiresAt > now + 60) {
+    return cachedOAuthToken.token;
+  }
+
+  const header = { alg: 'RS256', typ: 'JWT' };
+  const payload = {
+    iss: creds.clientEmail,
+    scope: 'https://www.googleapis.com/auth/firebase.messaging',
+    aud: 'https://oauth2.googleapis.com/token',
+    exp: now + 3600,
+    iat: now,
+  };
+
+  const encodedHeader = base64UrlEncode(JSON.stringify(header));
+  const encodedPayload = base64UrlEncode(JSON.stringify(payload));
+  const unsignedToken = `${encodedHeader}.${encodedPayload}`;
+
+  const derKey = pemToPkcs8(creds.privateKey);
+  const cryptoKey = await crypto.subtle.importKey(
+    'pkcs8',
+    derKey,
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+
+  const encoder = new TextEncoder();
+  const signature = await crypto.subtle.sign(
+    'RSASSA-PKCS1-v1_5',
+    cryptoKey,
+    encoder.encode(unsignedToken)
+  );
+
+  const signedJwt = `${unsignedToken}.${base64UrlEncode(new Uint8Array(signature))}`;
+
+  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion: signedJwt,
+    }),
+  });
+
+  if (!tokenRes.ok) {
+    const errText = await tokenRes.text();
+    throw new Error(`Google OAuth2 token exchange failed HTTP ${tokenRes.status}: ${errText}`);
+  }
+
+  const tokenJson = await tokenRes.json();
+  cachedOAuthToken = {
+    token: tokenJson.access_token,
+    expiresAt: now + (tokenJson.expires_in || 3600),
+  };
+
+  return tokenJson.access_token;
+}
+
 async function dispatchFcmEmergencyNotification(
   supabase: any,
   userId: string,
@@ -40,7 +170,7 @@ async function dispatchFcmEmergencyNotification(
   title: string,
   body: string,
   payloadData: Record<string, string>
-) {
+): Promise<FcmDispatchResult> {
   try {
     const { data: tokens, error: tokensErr } = await supabase
       .from('fcm_tokens')
@@ -50,35 +180,46 @@ async function dispatchFcmEmergencyNotification(
 
     if (tokensErr || !tokens || tokens.length === 0) {
       console.log(`[FCM INFO] No registered active Android FCM tokens found for user ${userId}`);
-      return;
+      return { status: 'no_tokens', sentCount: 0, failedCount: 0, messageIds: [] };
     }
 
-    const fcmServerKey = Deno.env.get('FCM_SERVER_KEY') || '';
-    console.log(`[FCM NOTIFICATION] Preparing emergency broadcast to ${tokens.length} Android device(s)`);
+    const creds = getFirebaseCredentials();
+    if (!creds) {
+      console.warn('[FCM HTTP v1 UNCONFIGURED] Firebase service account credentials not found in Edge Function secrets (FIREBASE_SERVICE_ACCOUNT or FIREBASE_PROJECT_ID + FIREBASE_PRIVATE_KEY).');
+      return { status: 'unconfigured', sentCount: 0, failedCount: 0, messageIds: [], error: 'FCM service account credentials unconfigured' };
+    }
+
+    let accessToken: string;
+    try {
+      accessToken = await getGoogleOAuth2AccessToken(creds);
+    } catch (authErr: any) {
+      console.error('[FCM AUTH ERROR] Failed to obtain OAuth2 token for FCM v1:', authErr.message);
+      return { status: 'failed', sentCount: 0, failedCount: tokens.length, messageIds: [], error: authErr.message };
+    }
+
+    console.log(`[FCM HTTP v1] Preparing emergency broadcast to ${tokens.length} Android device(s) [Project: ${creds.projectId}]`);
+    const endpoint = `https://fcm.googleapis.com/v1/projects/${creds.projectId}/messages:send`;
+    const messageIds: string[] = [];
+    let sentCount = 0;
+    let failedCount = 0;
 
     for (const tokenRecord of tokens) {
       const fcmToken = tokenRecord.fcm_token;
       if (!fcmToken) continue;
 
-      if (fcmServerKey) {
-        // Dispatch via Firebase Legacy Cloud Messaging endpoint
-        try {
-          const res = await fetch('https://fcm.googleapis.com/fcm/send', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `key=${fcmServerKey}`,
-            },
-            body: JSON.stringify({
-              to: fcmToken,
-              priority: 'high',
-              direct_boot_ok: true,
+      try {
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({
+            message: {
+              token: fcmToken,
               notification: {
                 title,
                 body,
-                sound: 'emergency_siren.mp3',
-                android_channel_id: 'gas_emergency_channel_v1',
-                click_action: 'FLUTTER_NOTIFICATION_CLICK',
               },
               data: {
                 ...payloadData,
@@ -86,19 +227,47 @@ async function dispatchFcmEmergencyNotification(
                 click_action: 'OPEN_EMERGENCY_ACTIVITY',
                 timestamp: new Date().toISOString(),
               },
-            }),
-          });
-          console.log(`[FCM DISPATCH] Sent alert to device ${tokenRecord.device_model || 'Android'}: HTTP ${res.status}`);
-        } catch (fcmErr: any) {
-          console.warn(`[FCM DISPATCH ERROR] Failed sending to token ${fcmToken.substring(0, 10)}...:`, fcmErr.message);
+              android: {
+                priority: 'HIGH',
+                direct_boot_ok: true,
+                notification: {
+                  sound: 'emergency_siren.mp3',
+                  channel_id: 'gas_emergency_channel_v1',
+                  click_action: 'FLUTTER_NOTIFICATION_CLICK',
+                },
+              },
+            },
+          }),
+        });
+
+        if (res.ok) {
+          const resJson = await res.json();
+          sentCount++;
+          if (resJson.name) {
+            messageIds.push(resJson.name);
+          }
+          console.log(`[FCM HTTP v1 SENT] Alert dispatched to ${tokenRecord.device_model || 'Android'}: ${resJson.name || 'HTTP 200'}`);
+        } else {
+          failedCount++;
+          const errBody = await res.text();
+          console.warn(`[FCM HTTP v1 ERROR] Dispatch failed for ${tokenRecord.device_model || 'Android'} (HTTP ${res.status}): ${errBody}`);
         }
-      } else {
-        // Log notification event when FCM_SERVER_KEY is pending configuration in Supabase Dashboard
-        console.log(`[FCM SIMULATED] Key pending. Emergency payload queued for ${tokenRecord.device_model || 'Android'}: "${title}" - "${body}"`);
+      } catch (fcmErr: any) {
+        failedCount++;
+        console.warn(`[FCM HTTP v1 EXCEPTION] Failed sending to token ${fcmToken.substring(0, 10)}...:`, fcmErr.message);
       }
     }
+
+    const finalStatus = sentCount > 0 ? 'sent' : (failedCount > 0 ? 'failed' : 'no_tokens');
+    return {
+      status: finalStatus,
+      sentCount,
+      failedCount,
+      messageIds,
+    };
   } catch (err: any) {
     console.warn('[FCM EXCEPTION] Error during Android push dispatch:', err.message);
+    return { status: 'failed', sentCount: 0, failedCount: 0, messageIds: [], error: err.message };
   }
 }
 
@@ -259,6 +428,23 @@ serve(async (req: Request) => {
         firmware_version,
         device_id,
         device_slug,
+        emergency_cycle_id,
+        demo_mode,
+        event_type,
+        restoration_completed,
+        buzzer_active,
+        separate_siren_active,
+        state_light,
+        state_fan,
+        state_motor,
+        state_street_light,
+        state_exhaust,
+        pre_light,
+        pre_fan,
+        pre_motor,
+        pre_street_light,
+        pre_exhaust,
+        snapshot_saved,
       } = payload;
 
       const parseNumeric = (val: unknown): number | null => {
@@ -332,7 +518,12 @@ serve(async (req: Request) => {
           gas_raw_adc: validatedGasRawAdc,
           gas_status: sanitizedGasStatus,
           anomaly: sanitizedAnomaly,
-          is_demo: false,
+          gas_emergency: sanitizedGasStatus === 'danger',
+          gas_warmup: sanitizedGasStatus === 'warming_up',
+          gas_sensor_fault: sensor_fault === true || sanitizedGasStatus === 'sensor_fault',
+          emergency_lockout: Boolean(lockout_active),
+          is_demo: Boolean(demo_mode),
+          demo_mode: Boolean(demo_mode),
           recorded_at: new Date().toISOString(),
         })
         .select('id')
@@ -421,91 +612,352 @@ serve(async (req: Request) => {
         }
       }
 
+      // Synchronize 5 physical relay states strictly from verified hardware feedback
+      if (state_light !== undefined) {
+        await supabase.from('devices').update({ state: Boolean(state_light), is_hardware_connected: true, last_toggled: new Date().toISOString() }).eq('home_id', authenticatedHomeId).eq('relay_channel', 1);
+      }
+      if (state_fan !== undefined) {
+        await supabase.from('devices').update({ state: Boolean(state_fan), is_hardware_connected: true, last_toggled: new Date().toISOString() }).eq('home_id', authenticatedHomeId).eq('relay_channel', 2);
+      }
+      if (state_motor !== undefined) {
+        await supabase.from('devices').update({ state: Boolean(state_motor), is_hardware_connected: true, last_toggled: new Date().toISOString() }).eq('home_id', authenticatedHomeId).eq('relay_channel', 3);
+      }
+      if (state_street_light !== undefined) {
+        await supabase.from('devices').update({ state: Boolean(state_street_light), is_hardware_connected: true, last_toggled: new Date().toISOString() }).eq('home_id', authenticatedHomeId).eq('relay_channel', 4);
+      }
+      if (state_exhaust !== undefined) {
+        await supabase.from('devices').update({ state: Boolean(state_exhaust), is_hardware_connected: true, last_toggled: new Date().toISOString() }).eq('home_id', authenticatedHomeId).eq('relay_channel', 5);
+      }
+
+      const isDemo = Boolean(demo_mode);
+
       // 2. CRITICAL GAS LEAKAGE HANDLING & LOCKOUT ENFORCEMENT
-      if (sanitizedGasStatus === 'danger') {
-        // Enforce all appliance relays to OFF state in database
-        await supabase
-          .from('devices')
-          .update({
-            state: false,
-            power_watts: 0,
-            last_toggled: new Date().toISOString(),
-          })
-          .eq('user_id', authenticatedUserId)
-          .eq('home_id', authenticatedHomeId);
+      if (sanitizedGasStatus === 'danger' || event_type === 'gas_detected') {
+        // Dedicated emergency event tracking in emergency_events
+        try {
+          const { data: activeEvent } = await supabase
+            .from('emergency_events')
+            .select('event_id, emergency_cycle_id')
+            .eq('home_id', authenticatedHomeId)
+            .is('completed_at', null)
+            .order('emergency_started_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
 
-        // Check if active real unresolved critical gas alert exists
-        const { data: existingCritical } = await supabase
-          .from('alerts')
-          .select('id, emergency_status')
-          .eq('user_id', authenticatedUserId)
-          .eq('home_id', authenticatedHomeId)
-          .eq('type', 'gas_leak')
-          .is('resolved_at', null)
-          .or('is_demo.is.null,is_demo.eq.false')
-          .limit(5);
+          if (!activeEvent) {
+            const preStates = snapshot_saved ? {
+              light: Boolean(pre_light),
+              fan: Boolean(pre_fan),
+              motor: Boolean(pre_motor),
+              street_light: Boolean(pre_street_light),
+              exhaust_fan: Boolean(pre_exhaust),
+            } : null;
 
-        const hasActiveCritical = Boolean(
-          existingCritical?.some(
-            a => a.emergency_status !== 'RESOLVED' && a.emergency_status !== 'NORMAL'
-          )
-        );
+            await supabase.from('emergency_events').insert({
+              home_id: authenticatedHomeId,
+              user_id: authenticatedUserId,
+              emergency_cycle_id: emergency_cycle_id || null,
+              event_type: 'gas_detected',
+              demo_mode: isDemo,
+              gas_raw_adc: validatedGasRawAdc,
+              gas_status: 'danger',
+              gas_emergency: true,
+              emergency_lockout: true,
+              emergency_started_at: new Date().toISOString(),
+              pre_emergency_relay_states: preStates,
+              notification_status: 'sent',
+            });
 
-        if (!hasActiveCritical) {
+            // Insert 5-channel cutoff history into relay_state_history
+            const channels = [
+              { ch: 1, name: 'Light', pin: 25, prev: Boolean(pre_light), req: false, rep: Boolean(state_light) },
+              { ch: 2, name: 'Fan', pin: 26, prev: Boolean(pre_fan), req: false, rep: Boolean(state_fan) },
+              { ch: 3, name: 'Motor', pin: 27, prev: Boolean(pre_motor), req: false, rep: Boolean(state_motor) },
+              { ch: 4, name: 'Street Light', pin: 14, prev: Boolean(pre_street_light), req: false, rep: Boolean(state_street_light) },
+              { ch: 5, name: 'Exhaust Fan', pin: 32, prev: Boolean(pre_exhaust), req: true, rep: Boolean(state_exhaust) },
+            ];
+
+            for (const ch of channels) {
+              const dev = controllerDevices?.find((d: any) => d.relay_channel === ch.ch);
+              await supabase.from('relay_state_history').insert({
+                home_id: authenticatedHomeId,
+                user_id: authenticatedUserId,
+                device_id: dev?.id || null,
+                emergency_cycle_id: emergency_cycle_id || null,
+                relay_channel: ch.ch,
+                device_name: ch.name,
+                gpio_pin: ch.pin,
+                previous_state: ch.prev,
+                requested_state: ch.req,
+                reported_state: ch.rep,
+                event_source: 'emergency_cutoff',
+                demo_mode: isDemo,
+                timestamp: new Date().toISOString(),
+              });
+            }
+          }
+        } catch (_evErr) {
+          // Gracefully continue if table does not yet exist
+        }
+
+        // Notification A: GAS DETECTED
+        const titleA = isDemo ? '⚠️ GAS DETECTED — DEMO EMERGENCY' : 'GAS LEAKAGE DETECTED – CRITICAL EMERGENCY!';
+        const messageA = isDemo 
+          ? 'Gas sensor threshold exceeded. Previously ON normal devices were switched OFF, Exhaust Fan was requested ON, and emergency alarms were activated.'
+          : 'Immediate action required! Combustible gas detected above danger threshold. Software safety lockout latched. Sirens sounding. Evacuate premises!';
+        const alertTypeA = isDemo ? 'gas_detected_demo' : 'gas_leak';
+
+        // Check idempotency per cycle
+        let existingCritical = null;
+        if (emergency_cycle_id) {
+          const { data } = await supabase
+            .from('alerts')
+            .select('id')
+            .eq('user_id', authenticatedUserId)
+            .eq('home_id', authenticatedHomeId)
+            .eq('emergency_cycle_id', emergency_cycle_id)
+            .eq('type', alertTypeA)
+            .maybeSingle();
+          existingCritical = data;
+        } else {
+          const { data } = await supabase
+            .from('alerts')
+            .select('id')
+            .eq('user_id', authenticatedUserId)
+            .eq('home_id', authenticatedHomeId)
+            .eq('type', alertTypeA)
+            .is('resolved_at', null)
+            .maybeSingle();
+          existingCritical = data;
+        }
+
+        if (!existingCritical) {
           const adcText = validatedGasRawAdc != null ? `Raw ADC: ${validatedGasRawAdc}` : 'Raw ADC: N/A';
-          const alertDesc = `CRITICAL DANGER: Combustible gas detected above danger threshold (${adcText}, Threshold: 1600). Local ESP32 safety lockout triggered: Light (GPIO 14), Fan (GPIO 25), Motor (GPIO 26) disconnected. Main Contactor TRIPPED. Local audible siren sounding. Evacuate premises immediately!`;
-
-          await supabase.from('alerts').insert({
+          const { data: newAlert } = await supabase.from('alerts').insert({
             home_id: authenticatedHomeId,
             user_id: authenticatedUserId,
-            type: 'gas_leak',
+            emergency_cycle_id: emergency_cycle_id || null,
+            type: alertTypeA,
             category: 'critical',
             severity: 'danger',
             emergency_status: 'CRITICAL',
-            title: 'GAS LEAKAGE DETECTED – CRITICAL EMERGENCY!',
-            description: alertDesc,
+            title: titleA,
+            description: messageA,
             gas_ppm: sanitizedGasPpm,
             sensor_reading: `${adcText} (Threshold: 1600)`,
             evacuation_advised: true,
             acknowledged: false,
-            is_demo: false,
-            source: 'ESP32 MQ-2 Sensor (GPIO 34)',
-          });
+            is_demo: isDemo,
+            demo_mode: isDemo,
+            notification_provider: 'FCM HTTP v1 / Supabase Realtime',
+            dispatch_status: 'pending',
+            delivered_at: null,
+            source: isDemo ? 'ESP32 DEMO Automation (GPIO 34)' : 'ESP32 MQ-2 Sensor (GPIO 34)',
+          }).select('id').maybeSingle();
 
-          console.warn(`[CRITICAL EMERGENCY] Gas leak alert created for user ${authenticatedUserId} (${adcText})`);
+          console.warn(`[GAS EMERGENCY] Alert created for user ${authenticatedUserId} (${adcText}) [Cycle: ${emergency_cycle_id || 'N/A'}]`);
 
-          // Trigger Android FCM Push Notification with ground-truth raw ADC
-          await dispatchFcmEmergencyNotification(
+          const fcmRes = await dispatchFcmEmergencyNotification(
             supabase,
             authenticatedUserId,
             authenticatedHomeId,
-            'GAS LEAKAGE DETECTED – CRITICAL EMERGENCY!',
-            'Immediate action required! Relays disconnected and main contactor tripped. Sirens sounding.',
+            titleA,
+            messageA,
             {
               emergency_status: 'CRITICAL',
               raw_adc: String(validatedGasRawAdc ?? ''),
-              contactor_tripped: 'true',
+              emergency_cycle_id: String(emergency_cycle_id ?? ''),
+              demo_mode: String(isDemo),
             }
           );
+
+          if (newAlert?.id) {
+            await supabase.from('alerts').update({
+              dispatch_status: fcmRes.status,
+              delivered_at: fcmRes.status === 'sent' ? new Date().toISOString() : null,
+              delivery_notes: fcmRes.messageIds.length > 0 ? fcmRes.messageIds.join(', ') : (fcmRes.error || null),
+            }).eq('id', newAlert.id);
+          }
+
+          if (emergency_cycle_id) {
+            try {
+              await supabase.from('emergency_events').update({
+                notification_status: fcmRes.status,
+              }).eq('emergency_cycle_id', emergency_cycle_id);
+            } catch (_notifErr) {}
+          }
+        }
+      } else if (event_type === 'gas_recovery_started') {
+        try {
+          if (emergency_cycle_id) {
+            await supabase
+              .from('emergency_events')
+              .update({
+                recovery_started_at: new Date().toISOString(),
+                event_type: 'gas_recovery_started',
+              })
+              .eq('emergency_cycle_id', emergency_cycle_id)
+              .is('recovery_started_at', null);
+          }
+        } catch (_recErr) {}
+      } else if (event_type === 'gas_cleared' || restoration_completed === true) {
+        const completedAt = new Date().toISOString();
+
+        // 1. Update emergency_events record
+        try {
+          if (emergency_cycle_id) {
+            await supabase
+              .from('emergency_events')
+              .update({
+                completed_at: completedAt,
+                restoration_completed: true,
+                emergency_lockout: false,
+                gas_emergency: false,
+                gas_status: 'safe',
+                event_type: 'automatic_restoration_completed',
+              })
+              .eq('emergency_cycle_id', emergency_cycle_id);
+          }
+        } catch (_clearErr) {}
+
+        // 2. Insert 5-channel restoration history into relay_state_history
+        try {
+          const restoreRelays = [
+            { ch: 1, name: 'Light', pin: 25, prev: false, req: Boolean(pre_light), rep: Boolean(state_light) },
+            { ch: 2, name: 'Fan', pin: 26, prev: false, req: Boolean(pre_fan), rep: Boolean(state_fan) },
+            { ch: 3, name: 'Motor', pin: 27, prev: false, req: Boolean(pre_motor), rep: Boolean(state_motor) },
+            { ch: 4, name: 'Street Light', pin: 14, prev: false, req: Boolean(pre_street_light), rep: Boolean(state_street_light) },
+            { ch: 5, name: 'Exhaust Fan', pin: 32, prev: true, req: false, rep: Boolean(state_exhaust) },
+          ];
+
+          for (const ch of restoreRelays) {
+            const dev = controllerDevices?.find((d: any) => d.relay_channel === ch.ch);
+            await supabase.from('relay_state_history').insert({
+              home_id: authenticatedHomeId,
+              user_id: authenticatedUserId,
+              device_id: dev?.id || null,
+              emergency_cycle_id: emergency_cycle_id || null,
+              relay_channel: ch.ch,
+              device_name: ch.name,
+              gpio_pin: ch.pin,
+              previous_state: ch.prev,
+              requested_state: ch.req,
+              reported_state: ch.rep,
+              event_source: 'restoration',
+              demo_mode: isDemo,
+              timestamp: completedAt,
+            });
+          }
+        } catch (_rstErr) {}
+
+        // 3. Resolve active emergency alerts for this cycle
+        if (emergency_cycle_id) {
+          await supabase
+            .from('alerts')
+            .update({
+              acknowledged: true,
+              resolved_at: completedAt,
+              emergency_status: 'RESOLVED',
+            })
+            .eq('user_id', authenticatedUserId)
+            .eq('home_id', authenticatedHomeId)
+            .eq('emergency_cycle_id', emergency_cycle_id)
+            .is('resolved_at', null);
+        }
+
+        // 4. Notification B: GAS CLEARED
+        const titleB = '✅ GAS CLEARED — SYSTEM RESTORED';
+        const messageB = 'Gas readings remained below the configured clear threshold. Exhaust Fan was switched OFF and previously ON devices were restored.';
+        const alertTypeB = 'gas_cleared_demo';
+
+        let existingAlertB = null;
+        if (emergency_cycle_id) {
+          const { data } = await supabase
+            .from('alerts')
+            .select('id')
+            .eq('user_id', authenticatedUserId)
+            .eq('home_id', authenticatedHomeId)
+            .eq('emergency_cycle_id', emergency_cycle_id)
+            .eq('type', alertTypeB)
+            .maybeSingle();
+          existingAlertB = data;
+        }
+
+        if (!existingAlertB) {
+          const adcText = validatedGasRawAdc != null ? `Raw ADC: ${validatedGasRawAdc}` : 'Raw ADC: N/A';
+          const { data: newAlertB } = await supabase.from('alerts').insert({
+            home_id: authenticatedHomeId,
+            user_id: authenticatedUserId,
+            emergency_cycle_id: emergency_cycle_id || null,
+            type: alertTypeB,
+            category: 'recovery',
+            severity: 'info',
+            emergency_status: 'RESOLVED',
+            title: titleB,
+            description: messageB,
+            gas_ppm: sanitizedGasPpm,
+            sensor_reading: `${adcText} (Clear Threshold: 900)`,
+            evacuation_advised: false,
+            acknowledged: true,
+            resolved_at: completedAt,
+            is_demo: isDemo,
+            demo_mode: isDemo,
+            notification_provider: 'FCM HTTP v1 / Supabase Realtime',
+            dispatch_status: 'pending',
+            delivered_at: null,
+            source: 'ESP32 DEMO Automatic Recovery',
+          }).select('id').maybeSingle();
+
+          console.log(`[GAS CLEARED] Notification B created for user ${authenticatedUserId} [Cycle: ${emergency_cycle_id || 'N/A'}]`);
+
+          const fcmResB = await dispatchFcmEmergencyNotification(
+            supabase,
+            authenticatedUserId,
+            authenticatedHomeId,
+            titleB,
+            messageB,
+            {
+              emergency_status: 'RESOLVED',
+              raw_adc: String(validatedGasRawAdc ?? ''),
+              emergency_cycle_id: String(emergency_cycle_id ?? ''),
+              demo_mode: String(isDemo),
+            }
+          );
+
+          if (newAlertB?.id) {
+            await supabase.from('alerts').update({
+              dispatch_status: fcmResB.status,
+              delivered_at: fcmResB.status === 'sent' ? new Date().toISOString() : null,
+              delivery_notes: fcmResB.messageIds.length > 0 ? fcmResB.messageIds.join(', ') : (fcmResB.error || null),
+            }).eq('id', newAlertB.id);
+          }
+
+          if (emergency_cycle_id) {
+            try {
+              await supabase.from('emergency_events').update({
+                notification_status: fcmResB.status,
+              }).eq('emergency_cycle_id', emergency_cycle_id);
+            } catch (_notifErrB) {}
+          }
         }
       } else if (lockout_active === true || gas_cleared_pending_reset === true) {
-        // Enforce all appliance relays to OFF state in database
-        await supabase
-          .from('devices')
-          .update({
-            state: false,
-            power_watts: 0,
-            last_toggled: new Date().toISOString(),
-          })
-          .eq('user_id', authenticatedUserId)
-          .eq('home_id', authenticatedHomeId);
+        // Record recovery detection timestamp in emergency_events if event active
+        try {
+          await supabase
+            .from('emergency_events')
+            .update({ emergency_recovery_detected_at: new Date().toISOString() })
+            .eq('home_id', authenticatedHomeId)
+            .is('emergency_recovery_detected_at', null);
+        } catch (_evErr2) {
+          // Gracefully continue
+        }
 
         // Gas dropped below danger threshold, but lockout remains active until reset
         await supabase
           .from('alerts')
           .update({
             emergency_status: 'LOCKOUT_PENDING_RESET',
-            description: 'Gas concentration dropped below danger threshold. Audible siren silenced. System remains in SAFETY LOCKOUT with main contactor tripped until manual safety reset is completed.',
+            description: 'Gas concentration dropped below danger threshold. Audible siren silenced. System remains in SAFETY LOCKOUT until manual safety reset is completed on GPIO 13 or web dashboard.',
           })
           .eq('user_id', authenticatedUserId)
           .eq('home_id', authenticatedHomeId)
@@ -567,22 +1019,13 @@ serve(async (req: Request) => {
         );
       }
 
-      // Life-Safety Gate: Check if an active unresolved real gas hazard exists for this user
-      // Matches SQL trigger: (is_demo IS FALSE OR is_demo IS NULL) 
-      //   AND resolved_at IS NULL 
-      //   AND COALESCE(emergency_status, '') NOT IN ('RESOLVED', 'NORMAL')
-      // Note: Do not filter emergency_status via .not('emergency_status', 'in', ...) in PostgREST
-      // because PostgREST eliminates rows where emergency_status IS NULL. We retrieve all unresolved
-      // danger alerts and filter in JS to include NULL / CRITICAL / SILENCED / LOCKOUT_PENDING_RESET
-      // while excluding RESOLVED and NORMAL.
+      // Life-Safety Gate: Check if an active unresolved real gas hazard or demo lockout exists for this user
       const { data: activeGasHazards } = await supabase
         .from('alerts')
-        .select('id, emergency_status, resolved_at, is_demo')
+        .select('id, emergency_status, resolved_at, is_demo, emergency_cycle_id')
         .eq('user_id', authenticatedUserId)
-        .eq('type', 'gas_leak')
         .eq('severity', 'danger')
         .is('resolved_at', null)
-        .or('is_demo.is.null,is_demo.eq.false')
         .limit(10);
 
       const isGasEmergencyActive = Boolean(
@@ -590,8 +1033,7 @@ serve(async (req: Request) => {
           a => 
             !a.resolved_at && 
             a.emergency_status !== 'RESOLVED' && 
-            a.emergency_status !== 'NORMAL' && 
-            (a.is_demo === false || a.is_demo == null)
+            a.emergency_status !== 'NORMAL'
         )
       );
 
@@ -603,17 +1045,31 @@ serve(async (req: Request) => {
         const isResetCommand = actionUpper === 'RESET_SAFETY_LOCKOUT';
 
         if (isGasEmergencyActive && !isSafeDeEnergizing && !isResetCommand) {
-          // Auto-reject stale or pending energizing commands during active gas emergency
-          console.warn(`[GATEWAY INTERLOCK] Auto-rejecting pending command ${cmd.id} (${cmd.action}) due to active gas hazard`);
+          // Auto-reject stale or pending energizing commands during active gas emergency or demo lockout
+          const activeCycle = activeGasHazards?.find((a: any) => a.emergency_cycle_id)?.emergency_cycle_id || null;
+          console.warn(`[GATEWAY INTERLOCK] Auto-rejecting pending command ${cmd.id} (${cmd.action}) due to active gas lockout`);
           await supabase
             .from('device_commands')
             .update({
               status: 'rejected_gas_safety',
               acknowledged_at: new Date().toISOString(),
-              error_message: 'Gateway rejected dispatch: Real combustible gas emergency active. Electrical relay switching prohibited.',
+              error_message: 'Gateway rejected dispatch: Gas emergency lockout active. Electrical relay switching prohibited.',
+              rejection_reason: 'Gas emergency lockout active. Electrical relay switching prohibited.',
+              emergency_cycle_id: activeCycle,
             })
             .eq('id', cmd.id)
             .eq('user_id', authenticatedUserId);
+
+          try {
+            await supabase.from('device_logs').insert({
+              device_id: cmd.device_id,
+              user_id: authenticatedUserId,
+              home_id: authenticatedHomeId,
+              event_type: 'command_rejected',
+              message: `Rejected command ${cmd.action} on channel ${(cmd as any).devices?.relay_channel || 'N/A'}: Gas emergency lockout active (Cycle: ${activeCycle || 'N/A'})`,
+              created_at: new Date().toISOString(),
+            });
+          } catch {}
           continue;
         }
 
@@ -623,7 +1079,7 @@ serve(async (req: Request) => {
         }
 
         const relayChannel = Number(dev?.relay_channel) || 1;
-        const gpioPin = Number(dev?.gpio_pin) || (relayChannel === 1 ? 14 : relayChannel === 2 ? 25 : relayChannel === 3 ? 26 : -1);
+        const gpioPin = Number(dev?.gpio_pin) || (relayChannel === 1 ? 25 : relayChannel === 2 ? 26 : relayChannel === 3 ? 27 : relayChannel === 4 ? 14 : relayChannel === 5 ? 32 : -1);
 
         dispatchedCommands.push({
           command_id: cmd.id,
@@ -790,7 +1246,7 @@ serve(async (req: Request) => {
             severity: 'info',
             emergency_status: 'RESOLVED',
             title: 'Safety Reset Confirmed by Hardware – Normal Operation Restored',
-            description: 'ESP32 hardware node independently verified stable clean atmosphere, disarmed local safety lockout, and re-armed main contactor. Relays remain safely OFF.',
+            description: 'ESP32 hardware node independently verified stable clean atmosphere and disarmed local safety lockout. Relays remain safely OFF.',
             acknowledged: true,
             resolved_at: resolvedAt,
             is_demo: false,
@@ -825,6 +1281,26 @@ serve(async (req: Request) => {
           })
           .eq('id', commandRecord.device_id)
           .eq('user_id', authenticatedUserId);
+      }
+
+      // Safe insert into relay_state_history if table exists
+      try {
+        const devRecord = Array.isArray((commandRecord as any).devices)
+          ? (commandRecord as any).devices[0]
+          : (commandRecord as any).devices;
+
+        await supabase.from('relay_state_history').insert({
+          home_id: authenticatedHomeId,
+          user_id: authenticatedUserId,
+          device_id: commandRecord.device_id,
+          relay_channel: devRecord?.relay_channel || 1,
+          device_name: devRecord?.name || 'Device',
+          previous_state: devRecord?.state,
+          new_state: resolvedStatus === 'acknowledged' ? (actual_state !== undefined ? Boolean(actual_state) : commandRecord.action === 'ON') : false,
+          event_source: commandRecord.action === 'RESET_SAFETY_LOCKOUT' ? 'emergency_cutoff' : 'cloud',
+        });
+      } catch (_histErr) {
+        // Gracefully continue
       }
 
       // Safe insert into device_logs if table exists
@@ -1137,12 +1613,27 @@ serve(async (req: Request) => {
           severity: 'info',
           emergency_status: 'RESOLVED',
           title: 'Physical Safety Reset Completed – Normal Operation Restored',
-          description: `Atmosphere independently verified safe (< 900 ADC, latest reading: ${currentAdc} ADC). System lockout disarmed and main contactor restored via physical button on ${resetSource === 'physical_button_gpio13' ? 'GPIO 13' : 'GPIO 0'}. Relays remain OFF until commanded.`,
+          description: `Atmosphere independently verified safe (< 900 ADC, latest reading: ${currentAdc} ADC). System lockout disarmed via physical button on ${resetSource === 'physical_button_gpio13' ? 'GPIO 13' : 'GPIO 0'}. Relays remain OFF until commanded.`,
           acknowledged: true,
           resolved_at: resolvedAt,
           is_demo: false,
           source: resetSource,
         });
+
+        // Record manual reset in emergency_events
+        try {
+          await supabase
+            .from('emergency_events')
+            .update({
+              manual_reset_at: resolvedAt,
+              reset_authorized_by: resetSource,
+              emergency_lockout: false,
+            })
+            .eq('home_id', authenticatedHomeId)
+            .is('manual_reset_at', null);
+        } catch (_evErrReset) {
+          // Gracefully continue
+        }
 
         console.log(`[SAFETY RESET APPROVED] Completed for user ${authenticatedUserId} via ${resetSource} (Verified ADC: ${currentAdc})`);
 

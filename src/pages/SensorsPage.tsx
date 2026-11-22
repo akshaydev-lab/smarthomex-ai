@@ -29,10 +29,10 @@ export const SensorsPage: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Simulation Control Toolbar */}
-      <Card className="border-emerald-500/25 bg-gradient-to-r from-[#141C23] via-[#111820] to-[#141C23] p-4 shadow-sm">
+      <Card className="border-cyan-500/20 bg-gradient-to-r from-slate-900 via-slate-950 to-slate-900 p-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
+            <div className="p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
               <Sliders className="h-5 w-5" />
             </div>
             <div>
@@ -93,12 +93,12 @@ export const SensorsPage: React.FC = () => {
           value={telemetry.temperature}
           unit="°C"
           sensorModel="DHT11 Digital Sensor"
-          pinInfo="GPIO 32 (1-Wire)"
+          pinInfo="GPIO 4 (1-Wire)"
           icon={<Thermometer className="h-5 w-5" />}
           min={10}
           max={45}
           currentValue={telemetry.temperature}
-          accentColor={telemetry.temperature != null && telemetry.temperature > 30 ? 'amber' : 'emerald'}
+          accentColor={telemetry.temperature != null && telemetry.temperature > 30 ? 'amber' : 'teal'}
           statusText={telemetry.temperature == null ? 'FAULT / DISCONNECTED' : telemetry.temperature > 30 ? 'ELEVATED' : 'OPTIMAL'}
           subtitle="Measures indoor environmental heat index."
           isRealHardware={telemetry.isHardwareConnected}
@@ -110,7 +110,7 @@ export const SensorsPage: React.FC = () => {
           value={telemetry.humidity}
           unit="%"
           sensorModel="DHT11 Digital Sensor"
-          pinInfo="GPIO 32 (1-Wire)"
+          pinInfo="GPIO 4 (1-Wire)"
           icon={<Droplet className="h-5 w-5" />}
           min={20}
           max={90}
@@ -132,7 +132,7 @@ export const SensorsPage: React.FC = () => {
           min={0}
           max={16}
           currentValue={telemetry.voltage}
-          accentColor="emerald"
+          accentColor="cyan"
           statusText={telemetry.voltage == null ? 'FAULT / DISCONNECTED' : telemetry.voltage < 10.0 ? 'VOLTAGE SAG' : telemetry.voltage > 14.5 ? 'VOLTAGE SURGE' : '12V NOMINAL'}
           subtitle="Monitored 12V DC supply rail for motor load & inductive transients."
           isRealHardware={telemetry.isHardwareConnected}
@@ -168,7 +168,7 @@ export const SensorsPage: React.FC = () => {
           currentValue={telemetry.power ?? 0}
           accentColor="emerald"
           statusText={telemetry.power == null ? 'DISCONNECTED / NO DATA' : 'NORMAL POWER'}
-          subtitle="Real-time calculated wattage of all 4 circuits."
+          subtitle="Real-time calculated wattage of all 5 circuits."
           isRealHardware={telemetry.isHardwareConnected}
         />
 
@@ -183,7 +183,7 @@ export const SensorsPage: React.FC = () => {
           min={0}
           max={10}
           currentValue={telemetry.energyTodayKWh}
-          accentColor="emerald"
+          accentColor="teal"
           statusText="DAILY PROGRESS"
           subtitle="Continuous integration over 24-hour cycle."
         />
@@ -193,38 +193,38 @@ export const SensorsPage: React.FC = () => {
       <GasSensorCard telemetry={telemetry} />
 
       {/* Hardware Pinout & Architecture Diagram Callout */}
-      <Card className="p-5 bg-[#141C23]/90 border-white/[0.08]">
-        <div className="flex items-center justify-between pb-3 border-b border-white/[0.08] mb-4">
+      <Card className="p-5">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
           <div className="flex items-center gap-2">
-            <Cpu className="h-5 w-5 text-emerald-400" />
+            <Cpu className="h-5 w-5 text-cyan-400" />
             <h3 className="text-base font-bold text-slate-100">ESP32 Pinout & Hardware Bus Summary</h3>
           </div>
-          <Badge variant="emerald" size="sm">Dual-Core 240MHz</Badge>
+          <Badge variant="teal" size="sm">Dual-Core 240MHz</Badge>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-xs font-mono">
-          <div className="p-3 rounded-xl bg-[#0B0F12]/80 border border-white/[0.06]">
-            <span className="font-bold text-emerald-300 block mb-1">DHT11 Temp & Humidity</span>
-            <p className="text-slate-400">Pin: GPIO 32</p>
+          <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800">
+            <span className="font-bold text-teal-300 block mb-1">DHT11 Temp & Humidity</span>
+            <p className="text-slate-400">Pin: GPIO 4</p>
             <p className="text-slate-400">Protocol: 1-Wire Single Bus</p>
             <p className="text-slate-400">Sampling Rate: 1 Hz (1 sec)</p>
           </div>
 
-          <div className="p-3 rounded-xl bg-[#0B0F12]/80 border border-white/[0.06]">
+          <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800">
             <span className="font-bold text-rose-300 block mb-1">MQ-2 Gas & Smoke</span>
             <p className="text-slate-400">Pin: GPIO 34 (ADC1 Ch6)</p>
             <p className="text-slate-400">Protocol: 12-bit Analog Voltage</p>
             <p className="text-slate-400">Interrupt: 100ms Safety Loop</p>
           </div>
 
-          <div className="p-3 rounded-xl bg-[#0B0F12]/80 border border-white/[0.06]">
-            <span className="font-bold text-emerald-300 block mb-1">INA219 Power Monitor</span>
+          <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800">
+            <span className="font-bold text-cyan-300 block mb-1">INA219 Power Monitor</span>
             <p className="text-slate-400">SDA: GPIO 21 | SCL: GPIO 22</p>
             <p className="text-slate-400">Protocol: I2C (Address 0x40)</p>
             <p className="text-slate-400">Bus Voltage: Up to 26V / Mains</p>
           </div>
 
-          <div className="p-3 rounded-xl bg-[#0B0F12]/80 border border-white/[0.06]">
+          <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800">
             <span className="font-bold text-amber-300 block mb-1">Piezo Buzzer & Alarm</span>
             <p className="text-slate-400">Pin: GPIO 33</p>
             <p className="text-slate-400">Protocol: Active 5V Siren Cadence</p>

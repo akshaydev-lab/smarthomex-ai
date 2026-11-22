@@ -62,9 +62,9 @@ export const AutomationsPage: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Top Header */}
-      <Card className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#141C23]/90 border-white/[0.08]">
+      <Card className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
+          <div className="p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
             <Workflow className="h-5 w-5" />
           </div>
           <div>
@@ -95,8 +95,8 @@ export const AutomationsPage: React.FC = () => {
             onClick={() => setFilter(cat)}
             className={`px-3 py-1.5 rounded-xl text-xs font-medium capitalize transition-all cursor-pointer ${
               filter === cat
-                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-semibold shadow-glow-emerald'
-                : 'bg-[#141C23]/80 text-slate-400 hover:text-slate-200 border border-white/[0.08]'
+                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-semibold'
+                : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border border-slate-800'
             }`}
           >
             {cat === 'all' ? 'All Rules' : `${cat} Rules`}
@@ -109,10 +109,10 @@ export const AutomationsPage: React.FC = () => {
         {filteredRules.map(rule => (
           <Card 
             key={rule.id}
-            className={`transition-all bg-[#141C23]/90 border-white/[0.08] hover:border-emerald-500/35 ${
+            className={`transition-all ${
               rule.isEsp32LocalRule 
-                ? 'border-emerald-500/30 bg-gradient-to-br from-emerald-950/20 via-[#141C23] to-[#0B0F12]' 
-                : ''
+                ? 'border-teal-500/30 bg-gradient-to-br from-teal-950/20 via-slate-900/80 to-slate-950' 
+                : 'border-slate-800'
             }`}
           >
             <div className="flex items-start justify-between gap-3">
@@ -121,7 +121,7 @@ export const AutomationsPage: React.FC = () => {
                   rule.category === 'safety' 
                     ? 'bg-rose-500/15 border-rose-500/30 text-rose-400' 
                     : rule.category === 'comfort' 
-                    ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400' 
+                    ? 'bg-cyan-500/15 border-cyan-500/30 text-cyan-400' 
                     : 'bg-amber-500/15 border-amber-500/30 text-amber-400'
                 }`}>
                   {rule.category === 'safety' ? (
@@ -136,7 +136,7 @@ export const AutomationsPage: React.FC = () => {
                   <div className="flex items-center gap-2 flex-wrap">
                     <h4 className="font-bold text-sm text-slate-100">{rule.name}</h4>
                     {rule.isEsp32LocalRule && (
-                      <Badge variant="emerald" size="sm" icon={<Cpu className="h-3 w-3" />}>
+                      <Badge variant="teal" size="sm" icon={<Cpu className="h-3 w-3" />}>
                         ESP32 Local Firmware
                       </Badge>
                     )}
@@ -150,8 +150,8 @@ export const AutomationsPage: React.FC = () => {
                 onClick={() => toggleAutomation(rule.id)}
                 className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 transition-colors duration-200 ease-in-out mt-1 ${
                   rule.enabled
-                    ? 'bg-emerald-500 border-emerald-400 shadow-glow-emerald'
-                    : 'bg-[#1A242E] border-white/10'
+                    ? 'bg-cyan-500 border-cyan-400'
+                    : 'bg-slate-800 border-slate-700'
                 }`}
                 role="switch"
                 aria-checked={rule.enabled}
@@ -165,9 +165,9 @@ export const AutomationsPage: React.FC = () => {
             </div>
 
             {/* Condition & Action Logic Box */}
-            <div className="mt-4 p-3 rounded-xl bg-[#0B0F12]/80 border border-white/[0.06] space-y-2 text-xs font-mono">
+            <div className="mt-4 p-3 rounded-xl bg-slate-950/70 border border-slate-800/80 space-y-2 text-xs font-mono">
               <div className="flex items-center gap-2">
-                <span className="text-emerald-400 font-bold shrink-0">WHEN:</span>
+                <span className="text-cyan-400 font-bold shrink-0">WHEN:</span>
                 <span className="text-slate-200">{rule.conditionSummary}</span>
               </div>
               <div className="flex items-center gap-2">
@@ -177,7 +177,7 @@ export const AutomationsPage: React.FC = () => {
             </div>
 
             {/* Bottom Actions */}
-            <div className="mt-3.5 pt-3 border-t border-white/[0.06] flex items-center justify-between text-xs text-slate-400">
+            <div className="mt-3.5 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
               <span className="capitalize text-slate-400 font-mono">
                 Category: <strong className="text-slate-300">{rule.category}</strong>
               </span>
@@ -195,11 +195,11 @@ export const AutomationsPage: React.FC = () => {
 
       {/* Add New Rule Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 bg-[#0B0F12]/85 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-[#141C23] rounded-2xl max-w-lg w-full p-6 border border-emerald-500/30 shadow-2xl animate-slide-up">
-            <div className="flex items-center justify-between pb-3 border-b border-white/[0.08] mb-4">
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="glass-panel rounded-2xl max-w-lg w-full p-6 border border-cyan-500/30 shadow-2xl animate-slide-up">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
               <div className="flex items-center gap-2">
-                <Workflow className="h-5 w-5 text-emerald-400" />
+                <Workflow className="h-5 w-5 text-cyan-400" />
                 <h3 className="font-bold text-base text-slate-100">Create Automation Rule</h3>
               </div>
               <button 
@@ -219,7 +219,7 @@ export const AutomationsPage: React.FC = () => {
                   value={ruleName}
                   onChange={(e) => setRuleName(e.target.value)}
                   placeholder="e.g., Gas Threshold Safety Trip"
-                  className="glass-input w-full px-3 py-2 rounded-xl text-slate-100 bg-[#0B0F12]/80 border-white/[0.08]"
+                  className="glass-input w-full px-3 py-2 rounded-xl text-slate-100"
                 />
               </div>
 
@@ -229,7 +229,7 @@ export const AutomationsPage: React.FC = () => {
                   <select
                     value={category}
                     onChange={(e: any) => setCategory(e.target.value)}
-                    className="glass-input w-full px-3 py-2 rounded-xl text-slate-100 bg-[#0B0F12] border-white/[0.08]"
+                    className="glass-input w-full px-3 py-2 rounded-xl text-slate-100 bg-slate-900"
                   >
                     <option value="safety">Safety Critical</option>
                     <option value="comfort">Climate Comfort</option>
@@ -242,7 +242,7 @@ export const AutomationsPage: React.FC = () => {
                   <select
                     value={targetDevice}
                     onChange={(e) => setTargetDevice(e.target.value)}
-                    className="glass-input w-full px-3 py-2 rounded-xl text-slate-100 bg-[#0B0F12] border-white/[0.08]"
+                    className="glass-input w-full px-3 py-2 rounded-xl text-slate-100 bg-slate-900"
                   >
                     {devices.map(d => (
                       <option key={d.id} value={d.id}>
@@ -261,7 +261,7 @@ export const AutomationsPage: React.FC = () => {
                   value={conditionSummary}
                   onChange={(e) => setConditionSummary(e.target.value)}
                   placeholder="e.g., IF MQ-2 Sensor > 350 PPM"
-                  className="glass-input w-full px-3 py-2 rounded-xl text-slate-100 font-mono bg-[#0B0F12]/80 border-white/[0.08]"
+                  className="glass-input w-full px-3 py-2 rounded-xl text-slate-100 font-mono"
                 />
               </div>
 
@@ -273,7 +273,7 @@ export const AutomationsPage: React.FC = () => {
                   value={actionSummary}
                   onChange={(e) => setActionSummary(e.target.value)}
                   placeholder="e.g., Turn ON Kitchen Exhaust Fan + Sound Siren"
-                  className="glass-input w-full px-3 py-2 rounded-xl text-slate-100 font-mono bg-[#0B0F12]/80 border-white/[0.08]"
+                  className="glass-input w-full px-3 py-2 rounded-xl text-slate-100 font-mono"
                 />
               </div>
 
@@ -284,21 +284,21 @@ export const AutomationsPage: React.FC = () => {
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="Briefly describe the safety or convenience rationale..."
-                  className="glass-input w-full px-3 py-2 rounded-xl text-slate-100 bg-[#0B0F12]/80 border-white/[0.08]"
+                  className="glass-input w-full px-3 py-2 rounded-xl text-slate-100"
                 />
               </div>
 
               {/* Local firmware checkbox */}
-              <div className="p-3 rounded-xl bg-[#0B0F12]/80 border border-white/[0.08] flex items-start gap-2.5">
+              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-start gap-2.5">
                 <input
                   type="checkbox"
                   id="localEspCheckbox"
                   checked={isLocalRule}
                   onChange={(e) => setIsLocalRule(e.target.checked)}
-                  className="mt-1 accent-emerald-500 rounded cursor-pointer"
+                  className="mt-1 accent-cyan-500 rounded cursor-pointer"
                 />
                 <label htmlFor="localEspCheckbox" className="text-slate-300 cursor-pointer">
-                  <span className="font-bold text-emerald-300 block">
+                  <span className="font-bold text-cyan-300 block">
                     Deploy as Local ESP32 RTOS Rule
                   </span>
                   <span className="text-[11px] text-slate-400 block mt-0.5">

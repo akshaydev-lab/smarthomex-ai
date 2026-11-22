@@ -89,7 +89,7 @@ const PasswordField: React.FC<PasswordFieldProps> = ({
       <button
         type="button"
         onClick={onToggleShow}
-        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-emerald-300 transition-colors"
+        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-cyan-300 transition-colors"
         aria-label={show ? 'Hide password' : 'Show password'}
       >
         {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -463,9 +463,9 @@ export const AuthPage: React.FC = () => {
   if (isAuthenticated && user) {
     return (
       <div className="max-w-xl mx-auto py-4 sm:py-8 space-y-6">
-        <Card className="p-6 border-emerald-500/30 bg-[#141C23]/95 shadow-glow-emerald text-center">
-          <div className="h-16 w-16 rounded-full bg-gradient-to-tr from-emerald-500 to-teal-400 p-0.5 mx-auto mb-4 shadow-glow-emerald">
-            <div className="h-full w-full rounded-full bg-[#0B0F12] flex items-center justify-center text-xl font-bold text-emerald-300">
+        <Card className="p-6 border-cyan-500/30 bg-gradient-to-br from-cyan-950/20 via-slate-900/90 to-slate-950 shadow-glow-cyan text-center">
+          <div className="h-16 w-16 rounded-full bg-gradient-to-tr from-cyan-500 to-teal-400 p-0.5 mx-auto mb-4 shadow-glow-cyan">
+            <div className="h-full w-full rounded-full bg-slate-950 flex items-center justify-center text-xl font-bold text-cyan-300">
               {user.name.charAt(0).toUpperCase()}
             </div>
           </div>
@@ -486,7 +486,7 @@ export const AuthPage: React.FC = () => {
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
                 placeholder="Full Name"
-                className="glass-input w-full px-3 py-1.5 rounded-xl text-center text-sm font-semibold text-slate-100 bg-[#0B0F12]/80 border-white/[0.08]"
+                className="glass-input w-full px-3 py-1.5 rounded-xl text-center text-sm font-semibold text-slate-100"
               />
               <div className="flex justify-center gap-2">
                 <Button
@@ -523,23 +523,23 @@ export const AuthPage: React.FC = () => {
                     setAuthSuccess(null);
                   }}
                   title="Edit Profile"
-                  className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-emerald-300 transition-colors"
+                  className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-cyan-300 transition-colors"
                 >
                   <Edit3 className="h-3.5 w-3.5" />
                 </button>
               </div>
-              <p className="text-xs font-mono text-emerald-400">{user.email}</p>
+              <p className="text-xs font-mono text-cyan-400">{user.email}</p>
             </div>
           )}
 
           <div className="mt-2 flex justify-center gap-2">
-            <Badge variant="emerald" size="sm">{user.role}</Badge>
+            <Badge variant="teal" size="sm">{user.role}</Badge>
             <Badge variant={isSupabaseConfigured ? 'emerald' : 'demo'} size="sm">
               {isSupabaseConfigured ? 'Supabase Cloud Session' : (!import.meta.env.PROD ? 'Demo Session' : 'Offline Session')}
             </Badge>
           </div>
 
-          <div className="mt-6 pt-5 border-t border-white/[0.08] flex justify-center gap-3">
+          <div className="mt-6 pt-5 border-t border-slate-800 flex justify-center gap-3">
             <Button
               variant="primary"
               size="sm"
@@ -570,10 +570,10 @@ export const AuthPage: React.FC = () => {
 
       {/* ── FORGOT PASSWORD VIEW ─────────────────────────────────────────── */}
       {view === 'forgot_password' && (
-        <Card className="p-6 sm:p-8 border-emerald-500/25 bg-[#141C23]/95 shadow-2xl">
+        <Card className="p-6 sm:p-8 border-cyan-500/30 bg-gradient-to-b from-slate-900/95 via-slate-950 to-slate-900/90 shadow-2xl">
           <div className="text-center mb-6">
-            <div className="h-12 w-12 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-400 p-0.5 mx-auto mb-3 shadow-glow-emerald">
-              <div className="h-full w-full bg-[#0B0F12] rounded-[14px] flex items-center justify-center">
+            <div className="h-12 w-12 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-400 p-0.5 mx-auto mb-3 shadow-glow-cyan">
+              <div className="h-full w-full bg-slate-950 rounded-[14px] flex items-center justify-center">
                 <KeyRound className="h-6 w-6 text-amber-400" />
               </div>
             </div>
@@ -606,7 +606,7 @@ export const AuthPage: React.FC = () => {
                   value={forgotEmail}
                   onChange={(e) => setForgotEmail(e.target.value)}
                   placeholder="your@email.com"
-                  className="glass-input w-full pl-9 pr-3 py-2.5 rounded-xl text-slate-100 placeholder:text-slate-400 text-xs bg-[#0B0F12]/80 border-white/[0.08]"
+                  className="glass-input w-full pl-9 pr-3 py-2.5 rounded-xl text-slate-100 placeholder:text-slate-400 text-xs"
                 />
               </div>
             </div>
@@ -625,7 +625,7 @@ export const AuthPage: React.FC = () => {
           <div className="mt-5 text-center text-xs text-slate-400">
             <button
               onClick={() => switchView('login')}
-              className="flex items-center justify-center gap-1.5 mx-auto text-emerald-400 font-semibold hover:underline cursor-pointer"
+              className="flex items-center justify-center gap-1.5 mx-auto text-cyan-400 font-semibold hover:underline cursor-pointer"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
               Back to Sign In
@@ -636,17 +636,17 @@ export const AuthPage: React.FC = () => {
 
       {/* ── SIGN IN VIEW ─────────────────────────────────────────────────── */}
       {view === 'login' && (
-        <Card className="p-6 sm:p-8 border-emerald-500/25 bg-[#141C23]/95 shadow-2xl">
+        <Card className="p-6 sm:p-8 border-cyan-500/30 bg-gradient-to-b from-slate-900/95 via-slate-950 to-slate-900/90 shadow-2xl">
           {/* Header */}
           <div className="text-center mb-6">
-            <div className="h-12 w-12 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 p-0.5 mx-auto mb-3 shadow-glow-emerald">
-              <div className="h-full w-full bg-[#0B0F12] rounded-[14px] flex items-center justify-center">
-                <Sparkles className="h-6 w-6 text-emerald-400" />
+            <div className="h-12 w-12 rounded-2xl bg-gradient-to-tr from-cyan-500 to-teal-400 p-0.5 mx-auto mb-3 shadow-glow-cyan">
+              <div className="h-full w-full bg-slate-950 rounded-[14px] flex items-center justify-center">
+                <Sparkles className="h-6 w-6 text-cyan-400" />
               </div>
             </div>
             <h2 className="text-xl font-bold text-slate-100">Welcome to SmartHomeX AI</h2>
             <p className="text-xs text-slate-400 mt-1">
-              Sign in to access your 5-channel ESP32 relays and telemetry stream
+              Sign in to access your 4-channel ESP32 relays and telemetry stream
             </p>
           </div>
 
@@ -688,7 +688,7 @@ export const AuthPage: React.FC = () => {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="admin@smarthomex.ai"
                   autoComplete="email"
-                  className="glass-input w-full pl-9 pr-3 py-2.5 rounded-xl text-slate-100 placeholder:text-slate-400 text-xs bg-[#0B0F12]/80 border-white/[0.08]"
+                  className="glass-input w-full pl-9 pr-3 py-2.5 rounded-xl text-slate-100 placeholder:text-slate-400 text-xs"
                 />
               </div>
             </div>
@@ -709,7 +709,7 @@ export const AuthPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => switchView('forgot_password')}
-                className="text-[11px] text-emerald-400 hover:underline cursor-pointer font-medium"
+                className="text-[11px] text-cyan-400 hover:underline cursor-pointer"
               >
                 Forgot password?
               </button>
@@ -730,7 +730,7 @@ export const AuthPage: React.FC = () => {
             Don't have an account?{' '}
             <button
               onClick={() => switchView('signup')}
-              className="text-emerald-400 font-semibold hover:underline cursor-pointer"
+              className="text-cyan-400 font-semibold hover:underline cursor-pointer"
             >
               Create one now
             </button>
@@ -740,11 +740,11 @@ export const AuthPage: React.FC = () => {
 
       {/* ── SIGN UP VIEW ─────────────────────────────────────────────────── */}
       {view === 'signup' && (
-        <Card className="p-6 sm:p-8 border-emerald-500/25 bg-[#141C23]/95 shadow-2xl">
+        <Card className="p-6 sm:p-8 border-cyan-500/30 bg-gradient-to-b from-slate-900/95 via-slate-950 to-slate-900/90 shadow-2xl">
           <div className="text-center mb-6">
-            <div className="h-12 w-12 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 p-0.5 mx-auto mb-3 shadow-glow-emerald">
-              <div className="h-full w-full bg-[#0B0F12] rounded-[14px] flex items-center justify-center">
-                <Sparkles className="h-6 w-6 text-emerald-400" />
+            <div className="h-12 w-12 rounded-2xl bg-gradient-to-tr from-cyan-500 to-teal-400 p-0.5 mx-auto mb-3 shadow-glow-cyan">
+              <div className="h-full w-full bg-slate-950 rounded-[14px] flex items-center justify-center">
+                <Sparkles className="h-6 w-6 text-cyan-400" />
               </div>
             </div>
             <h2 className="text-xl font-bold text-slate-100">Create SmartHomeX AI Account</h2>
@@ -790,7 +790,7 @@ export const AuthPage: React.FC = () => {
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder="Alex Vance"
                   autoComplete="name"
-                  className="glass-input w-full pl-9 pr-3 py-2.5 rounded-xl text-slate-100 placeholder:text-slate-400 text-xs bg-[#0B0F12]/80 border-white/[0.08]"
+                  className="glass-input w-full pl-9 pr-3 py-2.5 rounded-xl text-slate-100 placeholder:text-slate-400 text-xs"
                 />
               </div>
             </div>
@@ -810,7 +810,7 @@ export const AuthPage: React.FC = () => {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="admin@smarthomex.ai"
                   autoComplete="email"
-                  className="glass-input w-full pl-9 pr-3 py-2.5 rounded-xl text-slate-100 placeholder:text-slate-400 text-xs bg-[#0B0F12]/80 border-white/[0.08]"
+                  className="glass-input w-full pl-9 pr-3 py-2.5 rounded-xl text-slate-100 placeholder:text-slate-400 text-xs"
                 />
               </div>
             </div>
@@ -853,7 +853,7 @@ export const AuthPage: React.FC = () => {
                         : password.length >= 8
                           ? 'bg-amber-400'
                           : 'bg-rose-500'
-                      : 'bg-[#1A242E]'
+                      : 'bg-slate-800'
                       }`}
                   />
                 ))}
@@ -887,15 +887,15 @@ export const AuthPage: React.FC = () => {
                 type="checkbox"
                 checked={termsAccepted}
                 onChange={(e) => setTermsAccepted(e.target.checked)}
-                className="mt-0.5 h-3.5 w-3.5 accent-emerald-400 cursor-pointer shrink-0"
+                className="mt-0.5 h-3.5 w-3.5 accent-cyan-400 cursor-pointer shrink-0"
               />
               <span className="text-slate-400 group-hover:text-slate-300 transition-colors leading-relaxed">
                 I agree to the{' '}
-                <span className="text-emerald-400 hover:underline cursor-pointer font-semibold">
+                <span className="text-cyan-400 hover:underline cursor-pointer font-semibold">
                   Terms &amp; Conditions
                 </span>{' '}
                 and{' '}
-                <span className="text-emerald-400 hover:underline cursor-pointer font-semibold">
+                <span className="text-cyan-400 hover:underline cursor-pointer font-semibold">
                   Privacy Policy
                 </span>
               </span>
@@ -917,7 +917,7 @@ export const AuthPage: React.FC = () => {
             Already have an account?{' '}
             <button
               onClick={() => switchView('login')}
-              className="text-emerald-400 font-semibold hover:underline cursor-pointer"
+              className="text-cyan-400 font-semibold hover:underline cursor-pointer"
             >
               Sign In
             </button>
@@ -937,13 +937,13 @@ export const AuthPage: React.FC = () => {
 const SupabaseStatusCard: React.FC<{ supabaseConfig: { supabaseUrl: string; isConfigured: boolean } }> = ({
   supabaseConfig,
 }) => (
-  <Card className="p-4 bg-[#141C23]/90 border-white/[0.08] text-xs text-slate-400 space-y-2">
+  <Card className="p-4 border-slate-800 text-xs text-slate-400 space-y-2">
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-2 text-slate-300 font-semibold">
-        <Database className="h-4 w-4 text-emerald-400" />
+        <Database className="h-4 w-4 text-cyan-400" />
         <span>Supabase Cloud Integration Status</span>
       </div>
-      <Badge variant={supabaseConfig.isConfigured ? 'emerald' : 'slate'} size="sm">
+      <Badge variant={supabaseConfig.isConfigured ? 'emerald' : 'cyan'} size="sm">
         {supabaseConfig.isConfigured ? 'Connected' : 'Ready (.env.local)'}
       </Badge>
     </div>

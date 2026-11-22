@@ -1,27 +1,28 @@
 // ==============================================================================
-// SmartHomeX AI - Production ESP32 Firmware (v2.5.0)
+// SmartHomeX AI - Production ESP32 Firmware (v3.0.0)
 // Microcontroller: ESP32 30-pin DevKit (ESP32-WROOM-32)
 // Hardware:
-//   - 4-Channel Active LOW Relay (Ch 1 Light: GPIO 14, Ch 2 Fan: GPIO 25, Ch 3
-//   Motor: GPIO 26, Ch 4: Unused)
-//   - Separate Single-Channel Relay (Kitchen Exhaust Fan: GPIO 27)
-//   - Environmental: DHT11 (GPIO 32), MQ-2 Gas (GPIO 34 ADC1), INA219 (SDA 21,
-//   SCL 22)
-//   - Alert / Safety: Active Buzzer (GPIO 33), Physical BOOT / Reset Button
-//   (GPIO 0)
-// Backend: Supabase PostgreSQL Realtime via Secure Gateway Edge Function
+//   - Relay 1: Light (GPIO 25, Active-LOW)
+//   - Relay 2: Fan (GPIO 26, Active-LOW)
+//   - Relay 3: Motor (GPIO 27, Active-LOW)
+//   - Relay 4: Street Light (GPIO 14, Active-LOW, 4-Ch Module Ch 4)
+//   - Relay 5: Exhaust Fan (GPIO 32, Active-LOW DC Switching Driver)
+//   - Environmental: DHT11 (GPIO 4), MQ-2 Gas (GPIO 34 ADC1), INA219 (SDA 21, SCL 22)
+//   - Alert / Safety: Active Buzzer (GPIO 33), Physical Safety Reset Button (GPIO 13)
+// Backend: Supabase PostgreSQL Realtime Gateway & Arduino IoT Cloud
 // ==============================================================================
 
+#include <HTTPClient.h>
 #include "config.h"
 #include <Adafruit_INA219.h>
 #include <ArduinoJson.h>
 #include <DHT.h>
-#include <HTTPClient.h>
 #include <Preferences.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <Wire.h>
 #include <time.h>
+#include "thingProperties.h"
 
 // Non-Volatile Storage for persistent command deduplication across reboots
 Preferences preferences;
@@ -33,12 +34,37 @@ DHT dht(PIN_DHT11, DHT11);
 Adafruit_INA219 ina219;
 bool ina219Connected = false;
 
-// Relay States (True = ON/Energized, False = OFF/Idle)
+// 5 Relay States (True = ON/Energized, False = OFF/Idle)
 // All relays default to FALSE (OFF) during boot
-bool stateLight = false;   // 4-Ch Relay 1 (GPIO 14)
-bool stateFan = false;     // 4-Ch Relay 2 (GPIO 25)
-bool stateMotor = false;   // 4-Ch Relay 3 (GPIO 26)
-bool stateExhaust = false; // Separate Single Relay (GPIO 27)
+bool stateLight = false;       // Relay 1: Light (GPIO 25)
+bool stateFan = false;         // Relay 2: Fan (GPIO 26)
+bool stateMotor = false;       // Relay 3: Motor (GPIO 27)
+bool stateStreetLight = false; // Relay 4: Street Light (GPIO 14)
+bool stateExhaust = false;     // Relay 5: Exhaust Fan (GPIO 32)
+
+// Pre-Emergency Snapshot States (Recorded once at moment gas emergency begins)
+bool previousLightState = false;
+bool previousFanState = false;
+bool previousMotorState = false;
+bool previousStreetLightState = false;
+bool previousExhaustFanState = false;
+bool stateSnapshotSaved = false;
+
+// DEMO Emergency Cycle & Workflow Tracking
+char currentEmergencyCycleId[48] = "";
+String currentEmergencyEventType = "";
+bool restorationCompletedFlag = false;
+bool recoveryEventPendingAck = false;
+unsigned long lastRecoveryRetryMillis = 0;
+
+// Synthetic ADC Simulation (Educational Demonstration - Never use real gas)
+bool isSimulationActive = DEMO_SIMULATED_SENSOR_INPUT;
+int simulatedAdc = SIMULATED_ADC_NORMAL;
+String simulationScenario = "PHYSICAL";
+
+// Arduino IoT Cloud Integration Flags
+bool arduinoCloudActive = false;
+bool isSyncingCloudProperties = false;
 
 // Water Motor 30-Minute Continuous Cutoff Protection
 unsigned long motorActiveStartMillis = 0;
@@ -66,7 +92,9 @@ int lastRawAdc = -1;
 String gasStatus =
     "warming_up"; // "warming_up", "sensor_fault", "warning", "danger", "safe"
 bool isGasLockoutActive = false;
-bool isMainContactorTripped = false;
+// Note: No physical main contactor or auxiliary feedback contact exists on this board.
+// Field is preserved as false for backwards JSON telemetry schema compatibility.
+const bool isMainContactorTripped = false;
 bool gasClearedPendingReset = false;
 bool isSensorFaultActive = false;
 
@@ -122,7 +150,11 @@ char lastExecutedCmdId[48] = "";
 // ------------------------------------------------------------------------------
 // Function Prototypes
 // ------------------------------------------------------------------------------
+String buildGatewayUrl(const char *action);
 void initPersistentDeduplication();
+void initPersistentSafetyState();
+void saveSafetyStateToPreferences();
+void clearSafetyStateInPreferences();
 void setupHardwarePins();
 void checkLocalGasSafety();
 void checkPhysicalResetButton();
@@ -139,12 +171,15 @@ void reportMotorTripToSupabase();
 void reportSafetyResetToSupabase(const char *source);
 uint8_t scanI2CBus(uint8_t preferredAddress = 0x40);
 bool setRelayState(int channel, bool targetState);
-void sendTelemetryToSupabase();
+int sendTelemetryToSupabase();
 void pollPendingCommandsFromSupabase();
 int ackCommandToSupabase(const char *commandId, const char *deviceId,
                          const char *status, bool actualState,
                          const char *errMsg, int rttMs);
 void sendHeartbeatToSupabase();
+void handleSerialCommandInput();
+bool isArduinoCloudConfigured();
+void syncCloudSwitchProperties();
 
 // ==============================================================================
 // I2C Bus Diagnostic Scanner
@@ -206,8 +241,9 @@ void setup() {
   Serial.println(F("   Gas Emergency Automation & Protection System   "));
   Serial.println(F("=================================================="));
 
-  // 1. Initialize Hardware Pins & Persistent Flash Deduplication
+  // 1. Initialize Hardware Pins & Persistent Flash Deduplication / Safety State
   initPersistentDeduplication();
+  initPersistentSafetyState();
   setupHardwarePins();
 
   // 2. Initialize I2C Bus & INA219 Sensor
@@ -233,7 +269,7 @@ void setup() {
   // 3. Initialize DHT11 Sensor
   dht.begin();
   Serial.println(
-      F("[DHT11] Temperature & Humidity sensor initialized on GPIO 32."));
+      F("[DHT11] Temperature & Humidity sensor initialized on GPIO 4."));
 
   // 4. Initial Local Gas Baseline Sample
   analogReadResolution(12); // ESP32 12-bit ADC (0 - 4095)
@@ -262,6 +298,21 @@ void setup() {
                      "Background state machine will maintain reconnection."));
   }
 
+  // 6. Initialize Arduino IoT Cloud Properties & Callbacks
+  initProperties();
+  if (isArduinoCloudConfigured()) {
+    Serial.println(F("[ARDUINO IOT CLOUD] Provisioned credentials found. Initializing Arduino Cloud..."));
+    ArduinoCloud.begin(ArduinoIoTPreferredConnection);
+    setDebugMessageLevel(2);
+    ArduinoCloud.printDebugInfo();
+    arduinoCloudActive = true;
+  } else {
+    Serial.println(F("[ARDUINO IOT CLOUD] Notice: Placeholder credentials detected in thingProperties.h (THING_ID / DEVICE_KEY)."));
+    Serial.println(F("[ARDUINO IOT CLOUD] Cloud broker connection inhibited to preserve custom Wi-Fi state machine and prevent unauthenticated network traffic."));
+    Serial.println(F("[ARDUINO IOT CLOUD] 5 CloudSwitch properties and safety callbacks bound and ready for provisioned keys."));
+    arduinoCloudActive = false;
+  }
+
   lastEnergyCalcMillis = millis();
   Serial.println(
       F("[SYSTEM] Initialization complete. Entering main executive loop."));
@@ -271,6 +322,9 @@ void setup() {
 // Arduino Main Loop (Non-Blocking Multitasking Architecture)
 // ==============================================================================
 void loop() {
+  // Service serial commands for safe synthetic ADC simulation (DEMO testing)
+  handleSerialCommandInput();
+
   unsigned long currentMillis = millis();
 
   // ---------------------------------------------------------------------------
@@ -293,9 +347,46 @@ void loop() {
   }
 
   // ---------------------------------------------------------------------------
+  // Priority 1c: Pending Recovery Event Retransmission Watchdog
+  // If a previous GAS CLEARED event failed or occurred while offline, retry
+  // submission with the retained cycle ID once Wi-Fi is active.
+  // ---------------------------------------------------------------------------
+  if (recoveryEventPendingAck && (currentWifiState == WIFI_STATE_CONNECTED) && (WiFi.status() == WL_CONNECTED)) {
+    if (currentMillis - lastRecoveryRetryMillis >= 3000) {
+      lastRecoveryRetryMillis = currentMillis;
+      Serial.print(F("[RECOVERY RETRY] Resubmitting pending GAS CLEARED event for Cycle: "));
+      Serial.println(currentEmergencyCycleId);
+      currentEmergencyEventType = "gas_cleared";
+      restorationCompletedFlag = true;
+      int retryAck = sendTelemetryToSupabase();
+      if (retryAck == 200) {
+        Serial.println(F("[RECOVERY RETRY SUCCESS] Backend acknowledged GAS CLEARED event. Clearing cycle from NVS."));
+        clearSafetyStateInPreferences();
+        recoveryEventPendingAck = false;
+        currentEmergencyCycleId[0] = '\0';
+        currentEmergencyEventType = "";
+        restorationCompletedFlag = false;
+        safeReadingsStartMillis = 0;
+        isRecoveryStable = false;
+      } else {
+        Serial.print(F("[RECOVERY RETRY] Backend ACK pending (HTTP "));
+        Serial.print(retryAck);
+        Serial.println(F("). Retaining state in flash."));
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Priority 2: Water Motor 30-Minute Continuous Run-Time Auto Cutoff
   // ---------------------------------------------------------------------------
   updateMotorRuntimeGuard();
+
+  // ---------------------------------------------------------------------------
+  // Priority 2b: Arduino IoT Cloud Property & Event Loop Update
+  // ---------------------------------------------------------------------------
+  if (arduinoCloudActive) {
+    ArduinoCloud.update();
+  }
 
   // ---------------------------------------------------------------------------
   // Priority 3: Serialized Wi-Fi Connection State Machine (Requirements 5, 6,
@@ -367,6 +458,91 @@ void initPersistentDeduplication() {
     Serial.println(
         F("[NVS PERSISTENCE] No prior command ID stored in flash. Ready."));
   }
+}
+
+// ==============================================================================
+// Persistent Gas Safety Lockout & Relay Snapshot (ESP32 Flash NVS)
+// Survives reboots, power cycles, and brownouts during active emergencies
+// ==============================================================================
+void initPersistentSafetyState() {
+  preferences.begin("shx_safety", false);
+  isGasLockoutActive = preferences.getBool("lockout", false);
+  gasClearedPendingReset = preferences.getBool("pending_rst", false);
+  stateSnapshotSaved = preferences.getBool("snap_saved", false);
+  recoveryEventPendingAck = preferences.getBool("rec_pending", false);
+  previousLightState = preferences.getBool("prev_light", false);
+  previousFanState = preferences.getBool("prev_fan", false);
+  previousMotorState = preferences.getBool("prev_motor", false);
+  previousStreetLightState = preferences.getBool("prev_street", false);
+  previousExhaustFanState = preferences.getBool("prev_exhaust", false);
+  String savedCycle = preferences.getString("cycle_id", "");
+  strncpy(currentEmergencyCycleId, savedCycle.c_str(), sizeof(currentEmergencyCycleId) - 1);
+  currentEmergencyCycleId[sizeof(currentEmergencyCycleId) - 1] = '\0';
+
+  if (isGasLockoutActive) {
+    Serial.println(F("[SAFETY NVS] RESTORED ACTIVE GAS LOCKOUT FROM FLASH! System remains locked out across reboot."));
+    if (strlen(currentEmergencyCycleId) > 0) {
+      Serial.print(F("[SAFETY NVS] Restored Emergency Cycle ID: "));
+      Serial.println(currentEmergencyCycleId);
+    }
+  } else if (recoveryEventPendingAck) {
+    currentEmergencyEventType = "gas_cleared";
+    restorationCompletedFlag = true;
+    Serial.println(F("[SAFETY NVS] RESTORED UNACKNOWLEDGED GAS CLEARED EVENT! Retaining cycle ID for backend transmission retry."));
+    if (strlen(currentEmergencyCycleId) > 0) {
+      Serial.print(F("[SAFETY NVS] Retained Emergency Cycle ID: "));
+      Serial.println(currentEmergencyCycleId);
+    }
+  } else {
+    Serial.println(F("[SAFETY NVS] Normal operating state restored from flash."));
+  }
+}
+
+void saveSafetyStateToPreferences() {
+  preferences.putBool("lockout", isGasLockoutActive);
+  preferences.putBool("pending_rst", gasClearedPendingReset);
+  preferences.putBool("snap_saved", stateSnapshotSaved);
+  preferences.putBool("rec_pending", recoveryEventPendingAck);
+  preferences.putBool("prev_light", previousLightState);
+  preferences.putBool("prev_fan", previousFanState);
+  preferences.putBool("prev_motor", previousMotorState);
+  preferences.putBool("prev_street", previousStreetLightState);
+  preferences.putBool("prev_exhaust", previousExhaustFanState);
+  preferences.putString("cycle_id", currentEmergencyCycleId);
+}
+
+void clearSafetyStateInPreferences() {
+  isGasLockoutActive = false;
+  gasClearedPendingReset = false;
+  stateSnapshotSaved = false;
+  recoveryEventPendingAck = false;
+  currentEmergencyCycleId[0] = '\0';
+  preferences.putBool("lockout", false);
+  preferences.putBool("pending_rst", false);
+  preferences.putBool("snap_saved", false);
+  preferences.putBool("rec_pending", false);
+  preferences.putString("cycle_id", "");
+  Serial.println(F("[SAFETY NVS] Gas lockout and recovery state cleared from flash."));
+}
+
+// ==============================================================================
+// Robust Gateway URL Construction Helper
+// Combines SUPABASE_BASE_URL + SUPABASE_GATEWAY_URL + action parameter
+// ==============================================================================
+String buildGatewayUrl(const char *action) {
+  String url = String(SUPABASE_BASE_URL);
+  String path = String(SUPABASE_GATEWAY_URL);
+  if (!url.endsWith("/") && !path.startsWith("/")) {
+    url += "/";
+  } else if (url.endsWith("/") && path.startsWith("/")) {
+    url.remove(url.length() - 1);
+  }
+  url += path;
+  if (action != nullptr && strlen(action) > 0) {
+    url += (url.indexOf('?') >= 0 ? "&action=" : "?action=");
+    url += action;
+  }
+  return url;
 }
 
 // ==============================================================================
@@ -502,20 +678,21 @@ void updateWifiStateMachine() {
 }
 
 // ==============================================================================
-// Hardware Pin Initialization
+// Hardware Pin Initialization (All 5 Relays + Sensors)
 // ==============================================================================
 void setupHardwarePins() {
   // CRITICAL REQUIREMENT: For Active-LOW relays, write HIGH (RELAY_OFF) BEFORE
-  // configuring pinMode as OUTPUT. This eliminates momentary relay chatter /
-  // coil click on boot.
+  // configuring pinMode as OUTPUT. This eliminates momentary relay chatter / coil click on boot.
   digitalWrite(PIN_RELAY_LIGHT, RELAY_OFF);
   digitalWrite(PIN_RELAY_FAN, RELAY_OFF);
   digitalWrite(PIN_RELAY_MOTOR, RELAY_OFF);
+  digitalWrite(PIN_RELAY_STREET_LIGHT, RELAY_OFF);
   digitalWrite(PIN_RELAY_EXHAUST, RELAY_OFF);
 
   pinMode(PIN_RELAY_LIGHT, OUTPUT);
   pinMode(PIN_RELAY_FAN, OUTPUT);
   pinMode(PIN_RELAY_MOTOR, OUTPUT);
+  pinMode(PIN_RELAY_STREET_LIGHT, OUTPUT);
   pinMode(PIN_RELAY_EXHAUST, OUTPUT);
 
   // Analog input for MQ-2 (GPIO 34 is input-only ADC1 channel)
@@ -536,11 +713,13 @@ void setupHardwarePins() {
                                           : F("HIGH (RELEASED)"));
 
   Serial.println(F(
-      "[HARDWARE] Relays defaulted to OFF (Active-LOW safe boot completed)."));
-  Serial.println(F("[HARDWARE] 4-Channel Relay: Ch 1 (GPIO 14), Ch 2 (GPIO "
-                   "25), Ch 3 (GPIO 26), Ch 4 (UNUSED)."));
-  Serial.println(F("[HARDWARE] Separate Single Relay: Exhaust Fan (GPIO 27, "
-                   "spark interlock enforced)."));
+      "[HARDWARE] Relays defaulted to OFF (Active-LOW safe boot completed, zero chatter)."));
+  Serial.println(F("[HARDWARE] 5 Relays configured:"));
+  Serial.println(F("  - Relay 1: Light        -> GPIO 25 (Active-LOW)"));
+  Serial.println(F("  - Relay 2: Fan          -> GPIO 26 (Active-LOW)"));
+  Serial.println(F("  - Relay 3: Motor        -> GPIO 27 (Active-LOW)"));
+  Serial.println(F("  - Relay 4: Street Light -> GPIO 14 (Active-LOW, 4-Ch Module Ch 4)"));
+  Serial.println(F("  - Relay 5: Exhaust Fan  -> GPIO 32 (Active-LOW, Separate DC Switch)"));
 }
 
 // ==============================================================================
@@ -549,17 +728,21 @@ void setupHardwarePins() {
 // Independent of Wi-Fi or Cloud. Executes every 100ms.
 // ==============================================================================
 void checkLocalGasSafety() {
-  // Multi-sample analog read on GPIO 34 for electrical noise rejection
-  long adcSum = 0;
-  for (int i = 0; i < 8; i++) {
-    adcSum += analogRead(PIN_MQ2_ANALOG);
+  if (isSimulationActive) {
+    lastRawAdc = simulatedAdc;
+  } else {
+    // Multi-sample analog read on GPIO 34 for electrical noise rejection
+    long adcSum = 0;
+    for (int i = 0; i < 8; i++) {
+      adcSum += analogRead(PIN_MQ2_ANALOG);
+    }
+    lastRawAdc = (int)(adcSum / 8);
   }
-  lastRawAdc = (int)(adcSum / 8);
 
   // 1. Cold-Boot Stabilization Guard:
   // MQ-2 heater coil takes ~20 seconds to reach operating temperature on power
   // up.
-  if (millis() < MQ2_WARMUP_PERIOD_MS) {
+  if (!isSimulationActive && millis() < MQ2_WARMUP_PERIOD_MS) {
     gasStatus = "warming_up";
     isSensorFaultActive = false;
     safeReadingsStartMillis = 0;
@@ -577,16 +760,12 @@ void checkLocalGasSafety() {
     safeReadingsStartMillis = 0;
     isRecoveryStable = false;
 
-    // Intermittent double-beep fault alert
+    // Intermittent double-beep fault alert (non-blocking)
     unsigned long now = millis();
-    if (now - buzzerLastToggleMillis >= 3000) {
-      buzzerLastToggleMillis = now;
+    unsigned long cycleTime = (now - buzzerLastToggleMillis) % 3000;
+    if (cycleTime < 30 || (cycleTime >= 80 && cycleTime < 110)) {
       digitalWrite(PIN_BUZZER, HIGH);
-      delay(30);
-      digitalWrite(PIN_BUZZER, LOW);
-      delay(50);
-      digitalWrite(PIN_BUZZER, HIGH);
-      delay(30);
+    } else {
       digitalWrite(PIN_BUZZER, LOW);
     }
     return;
@@ -603,7 +782,44 @@ void checkLocalGasSafety() {
 
     if (!isGasLockoutActive) {
       isGasLockoutActive = true;
-      isMainContactorTripped = true;
+
+      // 1. Generate unique emergency_cycle_id if empty
+      if (strlen(currentEmergencyCycleId) == 0) {
+        snprintf(currentEmergencyCycleId, sizeof(currentEmergencyCycleId), "DEMO-EMG-%lu",
+                 (unsigned long)(millis() + (esp_random() % 10000)));
+      }
+
+      // 2. Snapshot pre-emergency logical ON/OFF states of Relays 1-4 (and 5) exactly once!
+      if (!stateSnapshotSaved) {
+        previousLightState = stateLight;
+        previousFanState = stateFan;
+        previousMotorState = stateMotor;
+        previousStreetLightState = stateStreetLight;
+        previousExhaustFanState = stateExhaust;
+        stateSnapshotSaved = true;
+        saveSafetyStateToPreferences();
+        Serial.println(F("[SAFETY INTERLOCK] Pre-emergency relay states recorded for restoration:"));
+        Serial.print(F("  Light: ")); Serial.print(previousLightState ? F("ON") : F("OFF"));
+        Serial.print(F(" | Fan: ")); Serial.print(previousFanState ? F("ON") : F("OFF"));
+        Serial.print(F(" | Motor: ")); Serial.print(previousMotorState ? F("ON") : F("OFF"));
+        Serial.print(F(" | Street Light: ")); Serial.print(previousStreetLightState ? F("ON") : F("OFF"));
+        Serial.print(F(" | Exhaust Fan: ")); Serial.println(previousExhaustFanState ? F("ON") : F("OFF"));
+      }
+
+#if DEMO_MODE
+      // 3. In DEMO_MODE, switch OFF previously ON normal devices (Relays 1-4):
+      if (stateLight) { digitalWrite(PIN_RELAY_LIGHT, RELAY_OFF); stateLight = false; }
+      if (stateFan) { digitalWrite(PIN_RELAY_FAN, RELAY_OFF); stateFan = false; }
+      if (stateMotor) { digitalWrite(PIN_RELAY_MOTOR, RELAY_OFF); stateMotor = false; }
+      if (stateStreetLight) { digitalWrite(PIN_RELAY_STREET_LIGHT, RELAY_OFF); stateStreetLight = false; }
+
+      // 4. In DEMO_MODE, request Relay 5 Exhaust Fan ON:
+      digitalWrite(PIN_RELAY_EXHAUST, RELAY_ON);
+      stateExhaust = true;
+
+      currentEmergencyEventType = "gas_detected";
+      Serial.println(F("[DEMO AUTOMATION] Normal devices 1-4 switched OFF, Exhaust Fan 5 energized ON."));
+#endif
 
       Serial.println();
       Serial.println(
@@ -611,40 +827,18 @@ void checkLocalGasSafety() {
       Serial.print(F(
           "[CRITICAL EMERGENCY] Combustible Gas Leakage Detected! Raw ADC: "));
       Serial.println(lastRawAdc);
-      Serial.println(F("[EMERGENCY LOCKOUT] Turning OFF Light (GPIO 14), Fan "
-                       "(GPIO 25), Motor (GPIO 26)."));
-      Serial.println(F("[SAFETY INTERLOCK] Main Contactor TRIPPED. "
-                       "Disconnecting AC mains."));
-
-      // CRITICAL LIFE SAFETY: Immediately disconnect ALL standard loads locally
-      digitalWrite(PIN_RELAY_LIGHT, RELAY_OFF);
-      digitalWrite(PIN_RELAY_FAN, RELAY_OFF);
-      digitalWrite(PIN_RELAY_MOTOR, RELAY_OFF);
-      stateLight = false;
-      stateFan = false;
-      stateMotor = false;
-
-      // Exhaust Fan Safety Interlock:
-      // Automatic activation is permitted ONLY if the fan, motor, switching
-      // components, power supply, and installation are certified
-      // explosion-proof (ATEX / IECEx).
-      if (HAZARDOUS_EXHAUST_CERTIFIED) {
-        Serial.println(F("[SAFETY INTERLOCK] Hazardous Atmosphere Certified "
-                         "Exhaust Fan ACTIVATED."));
-        digitalWrite(PIN_RELAY_EXHAUST, RELAY_ON);
-        stateExhaust = true;
-      } else {
-        Serial.println(F("[SAFETY INTERLOCK] Automatic Exhaust Fan INHIBITED "
-                         "(Spark hazard prevention)."));
-        digitalWrite(PIN_RELAY_EXHAUST, RELAY_OFF);
-        stateExhaust = false;
-      }
+#if DEMO_MODE
+      Serial.print(F("[DEMO AUTOMATION] Emergency Cycle ID: "));
+      Serial.println(currentEmergencyCycleId);
+#else
+      Serial.println(F("[SAFETY INTERLOCK] Combustible gas hazard active. Electrical relay switching INHIBITED to prevent contact arcing / spark ignition."));
+#endif
+      Serial.println(F("[SAFETY INTERLOCK] Software lockout latched. All incoming actuation blocked."));
       Serial.println(
           F("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"));
     }
 
-    // Sound local hardware buzzer in rapid emergency cadence (200ms ON / 100ms
-    // OFF)
+    // Sound local hardware buzzer in rapid emergency cadence (200ms ON / 100ms OFF)
     unsigned long now = millis();
     if (now - buzzerLastToggleMillis >= (buzzerToneState ? 200 : 100)) {
       buzzerLastToggleMillis = now;
@@ -656,47 +850,129 @@ void checkLocalGasSafety() {
     safeReadingsStartMillis = 0;
     isRecoveryStable = false;
 
-    // Intermittent warning beep (once every 1.5s)
+    // Intermittent warning beep (once every 1.5s, non-blocking)
     unsigned long now = millis();
-    if (now - buzzerLastToggleMillis >= 1500) {
-      buzzerLastToggleMillis = now;
+    unsigned long cycleTime = (now - buzzerLastToggleMillis) % 1500;
+    if (cycleTime < 40) {
       digitalWrite(PIN_BUZZER, HIGH);
-      delay(40);
+    } else {
       digitalWrite(PIN_BUZZER, LOW);
     }
   } else {
-    gasStatus = "safe";
-
-    // Track continuous safe readings for recovery stability verification
-    if (safeReadingsStartMillis == 0) {
-      safeReadingsStartMillis = millis();
-    } else if (millis() - safeReadingsStartMillis >=
-               MQ2_RECOVERY_STABLE_PERIOD_MS) {
-      isRecoveryStable = true;
-    }
-
-    // 4. Gas Cleared Logic:
-    // If gas drops below clearance threshold, silence audible siren,
-    // BUT PRESERVE EMERGENCY LOCKOUT AND CONTACTOR TRIP!
-    // Never automatically energize relays after a gas lockout! Requires manual
-    // safety reset!
-    if (isGasLockoutActive && lastRawAdc < MQ2_ADC_CLEAR_THRESHOLD) {
-      if (!gasClearedPendingReset) {
-        gasClearedPendingReset = true;
-        digitalWrite(PIN_BUZZER, LOW);
-        buzzerToneState = false;
-        Serial.println();
-        Serial.println(F("[SAFETY UPDATE] Gas concentration dropped below "
-                         "danger threshold."));
-        Serial.println(F("[SAFETY UPDATE] Audible siren silenced."));
-        Serial.println(F("[SAFETY UPDATE] System remains in EMERGENCY LOCKOUT. "
-                         "Contactor remains TRIPPED."));
-        Serial.println(F("[SAFETY UPDATE] Press external physical reset button "
-                         "(GPIO 13) or complete operator safety reset."));
-      }
-    } else if (!isGasLockoutActive) {
+    // Reading is below clear threshold (< 900)
+    if (!isGasLockoutActive) {
+      gasStatus = "safe";
+      safeReadingsStartMillis = 0;
+      isRecoveryStable = false;
       digitalWrite(PIN_BUZZER, LOW);
       buzzerToneState = false;
+    } else {
+      // System is in emergency lockout. Verify preconditions for recovery:
+      // Sensor warm-up must be complete AND sensor must not be in open-circuit fault!
+      bool isHealthy = (millis() >= MQ2_WARMUP_PERIOD_MS) &&
+                       !isSensorFaultActive &&
+                       (lastRawAdc >= MQ2_ADC_FAULT_THRESHOLD);
+
+      if (isHealthy) {
+        if (safeReadingsStartMillis == 0) {
+          safeReadingsStartMillis = millis();
+          currentEmergencyEventType = "gas_recovery_started";
+          Serial.println(F("[RECOVERY] Gas dropped below clearance threshold. Stable recovery timer started."));
+        } else if (millis() - safeReadingsStartMillis >= MQ2_RECOVERY_STABLE_PERIOD_MS) {
+          isRecoveryStable = true;
+
+#if DEMO_AUTO_RECOVERY
+          // Automatic Demo Recovery Sequence
+          gasStatus = "safe";
+
+          // 1. Switch OFF Relay 5 Exhaust Fan:
+          digitalWrite(PIN_RELAY_EXHAUST, RELAY_OFF);
+          stateExhaust = false;
+
+          // 2. Switch OFF existing buzzer:
+          digitalWrite(PIN_BUZZER, LOW);
+          buzzerToneState = false;
+
+          // 3. Restore Relays 1-4 to their saved pre-emergency states:
+          // Never restore a device that was originally OFF!
+          if (previousLightState) { digitalWrite(PIN_RELAY_LIGHT, RELAY_ON); stateLight = true; }
+          else { digitalWrite(PIN_RELAY_LIGHT, RELAY_OFF); stateLight = false; }
+
+          if (previousFanState) { digitalWrite(PIN_RELAY_FAN, RELAY_ON); stateFan = true; }
+          else { digitalWrite(PIN_RELAY_FAN, RELAY_OFF); stateFan = false; }
+
+          if (previousMotorState) { digitalWrite(PIN_RELAY_MOTOR, RELAY_ON); stateMotor = true; }
+          else { digitalWrite(PIN_RELAY_MOTOR, RELAY_OFF); stateMotor = false; }
+
+          if (previousStreetLightState) { digitalWrite(PIN_RELAY_STREET_LIGHT, RELAY_ON); stateStreetLight = true; }
+          else { digitalWrite(PIN_RELAY_STREET_LIGHT, RELAY_OFF); stateStreetLight = false; }
+
+          // 4. Relay 5 Exhaust Fan remains OFF after recovery:
+          digitalWrite(PIN_RELAY_EXHAUST, RELAY_OFF);
+          stateExhaust = false;
+
+          // Sync physical states back to Arduino IoT Cloud
+          syncCloudSwitchProperties();
+
+          // 5. DEMO AUTOMATIC RECOVERY EVENT DISPATCH:
+          // Preserve currentEmergencyCycleId throughout the recovery event workflow.
+          isGasLockoutActive = false;
+          gasClearedPendingReset = false;
+          currentEmergencyEventType = "gas_cleared";
+          restorationCompletedFlag = true;
+          recoveryEventPendingAck = true;
+
+          // Persist the pending recovery event and cycle ID to NVS so power failure won't discard it
+          preferences.putBool("lockout", false);
+          preferences.putBool("pending_rst", false);
+          preferences.putBool("rec_pending", true);
+          preferences.putString("cycle_id", currentEmergencyCycleId);
+
+          Serial.println();
+          Serial.println(F("===================================================="));
+          Serial.println(F("[DEMO RECOVERY COMPLETED] Automatic recovery sequence finished:"));
+          Serial.println(F("  - Exhaust Fan switched OFF"));
+          Serial.println(F("  - Audible buzzer silenced"));
+          Serial.println(F("  - Previously ON devices restored to pre-emergency states"));
+          Serial.println(F("  - Originally OFF devices remained OFF"));
+          Serial.print(F("  - Emergency cycle ID retained for ACK: "));
+          Serial.println(currentEmergencyCycleId);
+          Serial.println(F("===================================================="));
+
+          // Attempt immediate submission if network is connected
+          int ackResponse = sendTelemetryToSupabase();
+          if (ackResponse == 200) {
+            Serial.println(F("[DEMO RECOVERY] Backend confirmed GAS CLEARED persistence."));
+            clearSafetyStateInPreferences();
+            recoveryEventPendingAck = false;
+            currentEmergencyCycleId[0] = '\0';
+            currentEmergencyEventType = "";
+            restorationCompletedFlag = false;
+            safeReadingsStartMillis = 0;
+            isRecoveryStable = false;
+          } else {
+            Serial.print(F("[DEMO RECOVERY WARNING] Backend transmission not acknowledged (HTTP "));
+            Serial.print(ackResponse);
+            Serial.println(F("). Cycle ID preserved in flash NVS for retry."));
+          }
+#else
+          // Real-world non-demo mode: silence buzzer but keep emergency lockout latched until manual reset
+          if (!gasClearedPendingReset) {
+            gasClearedPendingReset = true;
+            saveSafetyStateToPreferences();
+            digitalWrite(PIN_BUZZER, LOW);
+            buzzerToneState = false;
+            Serial.println(F("[SAFETY UPDATE] Gas concentration dropped below clearance threshold."));
+            Serial.println(F("[SAFETY UPDATE] Audible siren silenced. System remains in EMERGENCY LOCKOUT."));
+            Serial.println(F("[SAFETY UPDATE] Press external physical reset button (GPIO 13) or complete operator safety reset."));
+          }
+#endif
+        }
+      } else {
+        // Sensor is warming up or faulted; reset recovery timer
+        safeReadingsStartMillis = 0;
+        isRecoveryStable = false;
+      }
     }
   }
 }
@@ -708,8 +984,7 @@ void checkPhysicalResetButton() {
   bool reading = digitalRead(PIN_PHYSICAL_RESET_BTN);
 
   // Live button test output: print ONLY when the electrical state changes.
-  // HIGH = released (internal pull-up); LOW = pressed (button connects GPIO 13
-  // to GND).
+  // HIGH = released (internal pull-up); LOW = pressed (button connects GPIO 13 to GND).
   if (reading != lastResetBtnState) {
     Serial.print(F("[BUTTON TEST] GPIO "));
     Serial.print(PIN_PHYSICAL_RESET_BTN);
@@ -734,23 +1009,21 @@ void checkPhysicalResetButton() {
         if (millis() >= MQ2_WARMUP_PERIOD_MS && !isSensorFaultActive &&
             lastRawAdc >= MQ2_ADC_FAULT_THRESHOLD &&
             lastRawAdc < MQ2_ADC_CLEAR_THRESHOLD && isRecoveryStable) {
-          Serial.println(F("[MANUAL RESET APPROVED] Gas level verified SAFE "
-                           "and stable. Disarming lockout..."));
-          isGasLockoutActive = false;
-          gasClearedPendingReset = false;
-          isMainContactorTripped = false;
+          Serial.println(F("[MANUAL RESET APPROVED] Gas level verified SAFE and stable. Disarming lockout..."));
+          clearSafetyStateInPreferences();
           digitalWrite(PIN_BUZZER, LOW);
           buzzerToneState = false;
 
-          // CRITICAL: Relays REMAIN OFF after reset. Never automatically
-          // energize relays!
+          // CRITICAL: Relays REMAIN OFF after reset. Never automatically energize relays!
           digitalWrite(PIN_RELAY_LIGHT, RELAY_OFF);
           digitalWrite(PIN_RELAY_FAN, RELAY_OFF);
           digitalWrite(PIN_RELAY_MOTOR, RELAY_OFF);
+          digitalWrite(PIN_RELAY_STREET_LIGHT, RELAY_OFF);
           digitalWrite(PIN_RELAY_EXHAUST, RELAY_OFF);
           stateLight = false;
           stateFan = false;
           stateMotor = false;
+          stateStreetLight = false;
           stateExhaust = false;
 
           // Double success chime
@@ -792,7 +1065,15 @@ void printLockoutDiagnostics() {
   Serial.println();
   Serial.println(F("---------- [ESP32 GAS LOCKOUT DIAGNOSTIC] ----------"));
   Serial.print(F("1. lastRawAdc                   : "));
-  Serial.println(lastRawAdc);
+  Serial.print(lastRawAdc);
+  if (isSimulationActive) {
+    Serial.print(F(" [SIMULATED - "));
+    Serial.print(simulationScenario);
+    Serial.print(F("]"));
+  } else {
+    Serial.print(F(" [PHYSICAL GPIO 34]"));
+  }
+  Serial.println();
   Serial.print(F("2. gasStatus                    : "));
   Serial.println(gasStatus);
   Serial.print(F("3. isSensorFaultActive          : "));
@@ -824,31 +1105,31 @@ void printLockoutDiagnostics() {
 }
 
 // ==============================================================================
-// Relay Actuation Engine (Enforces Gas Safety Inhibit & Channel Restrictions)
+// Relay Actuation Engine (Enforces Gas Safety Inhibit & 5-Channel Mapping)
 // ==============================================================================
 bool setRelayState(int channel, bool targetState) {
   // Gas Hazard Inhibit Guard: Reject any command trying to turn a device ON
-  // during danger or pending reset
-  if (targetState == true && (isGasLockoutActive || gasClearedPendingReset)) {
+  // during danger, warning, warmup, sensor fault, or pending reset
+  if (targetState == true && (isGasLockoutActive || gasClearedPendingReset || (gasStatus == "danger") || (gasStatus == "warning") || (gasStatus == "warming_up") || (gasStatus == "sensor_fault") || (gasStatus == "unknown"))) {
     Serial.print(F("[COMMAND REJECTED] Channel "));
     Serial.print(channel);
     Serial.println(
-        F(" ON command blocked by Gas Safety Interlock / Contactor Trip!"));
+        F(" ON command blocked by Gas Safety Interlock / Active Hazard!"));
     return false;
   }
 
   switch (channel) {
-  case 1: // 4-Channel Relay 1: Light (GPIO 14)
+  case 1: // Relay 1: Light (GPIO 25)
     digitalWrite(PIN_RELAY_LIGHT, targetState ? RELAY_ON : RELAY_OFF);
     stateLight = targetState;
     break;
 
-  case 2: // 4-Channel Relay 2: Fan (GPIO 25)
+  case 2: // Relay 2: Fan (GPIO 26)
     digitalWrite(PIN_RELAY_FAN, targetState ? RELAY_ON : RELAY_OFF);
     stateFan = targetState;
     break;
 
-  case 3: // 4-Channel Relay 3: Water Motor (GPIO 26)
+  case 3: // Relay 3: Motor (GPIO 27)
     digitalWrite(PIN_RELAY_MOTOR, targetState ? RELAY_ON : RELAY_OFF);
     stateMotor = targetState;
     if (targetState) {
@@ -857,15 +1138,15 @@ bool setRelayState(int channel, bool targetState) {
     }
     break;
 
-  case 4: // 4-Channel Relay 4: UNUSED (Permanently disabled)
-    Serial.println(F("[COMMAND REJECTED] Channel 4 on 4-Channel module is "
-                     "permanently UNUSED."));
-    return false;
+  case 4: // Relay 4: Street Light (GPIO 14)
+    digitalWrite(PIN_RELAY_STREET_LIGHT, targetState ? RELAY_ON : RELAY_OFF);
+    stateStreetLight = targetState;
+    break;
 
-  case 5: // Separate Single-Channel Relay: Kitchen Exhaust Fan (GPIO 27)
-    if (targetState && !HAZARDOUS_EXHAUST_CERTIFIED && isGasLockoutActive) {
+  case 5: // Relay 5: Exhaust Fan (GPIO 32)
+    if (targetState && !HAZARDOUS_EXHAUST_CERTIFIED && (isGasLockoutActive || gasStatus == "danger")) {
       Serial.println(F("[COMMAND REJECTED] Exhaust Fan activation prohibited "
-                       "during gas hazard (uncertified)."));
+                       "during gas hazard (uncertified spark hazard)."));
       return false;
     }
     digitalWrite(PIN_RELAY_EXHAUST, targetState ? RELAY_ON : RELAY_OFF);
@@ -882,7 +1163,166 @@ bool setRelayState(int channel, bool targetState) {
   Serial.print(channel);
   Serial.print(F(" actuated -> "));
   Serial.println(targetState ? F("ON") : F("OFF"));
+  syncCloudSwitchProperties();
   return true;
+}
+
+// ==============================================================================
+// Arduino IoT Cloud Integration & Relay Synchronization
+// ==============================================================================
+bool isArduinoCloudConfigured() {
+  return (strcmp(THING_ID, "YOUR_THING_ID") != 0 &&
+          strcmp(DEVICE_LOGIN_NAME, "YOUR_DEVICE_ID") != 0 &&
+          strcmp(DEVICE_KEY, "YOUR_SECRET_DEVICE_KEY") != 0 &&
+          strlen(THING_ID) > 0 && strlen(DEVICE_KEY) > 0);
+}
+
+void syncCloudSwitchProperties() {
+  isSyncingCloudProperties = true;
+  light = stateLight;
+  fan = stateFan;
+  motor = stateMotor;
+  streetLight = stateStreetLight;
+  exhaustFan = stateExhaust;
+  mq2RawADC = lastRawAdc;
+  gasEmergency = (lastRawAdc >= MQ2_ADC_DANGER_THRESHOLD);
+  gasWarmup = (millis() < MQ2_WARMUP_PERIOD_MS);
+  gasSensorFault = isSensorFaultActive;
+  emergencyLockout = isGasLockoutActive;
+  if (dhtValid && !isnan(ambientTemp_C)) {
+    temperature = ambientTemp_C;
+    humidity = ambientHumidity;
+  }
+  if (ina219Valid && !isnan(busVoltage_V)) {
+    busVoltage = busVoltage_V;
+    currentMa = current_mA;
+    powerW = power_W;
+  }
+  isSyncingCloudProperties = false;
+}
+
+void onLightChange() {
+  if (isSyncingCloudProperties) return;
+  bool requested = (bool)light;
+  Serial.print(F("[ARDUINO CLOUD] onLightChange -> Requested: "));
+  Serial.println(requested ? F("ON") : F("OFF"));
+  bool success = setRelayState(1, requested);
+  if (!success) {
+    isSyncingCloudProperties = true;
+    light = stateLight;
+    isSyncingCloudProperties = false;
+  }
+}
+
+void onFanChange() {
+  if (isSyncingCloudProperties) return;
+  bool requested = (bool)fan;
+  Serial.print(F("[ARDUINO CLOUD] onFanChange -> Requested: "));
+  Serial.println(requested ? F("ON") : F("OFF"));
+  bool success = setRelayState(2, requested);
+  if (!success) {
+    isSyncingCloudProperties = true;
+    fan = stateFan;
+    isSyncingCloudProperties = false;
+  }
+}
+
+void onMotorChange() {
+  if (isSyncingCloudProperties) return;
+  bool requested = (bool)motor;
+  Serial.print(F("[ARDUINO CLOUD] onMotorChange -> Requested: "));
+  Serial.println(requested ? F("ON") : F("OFF"));
+  bool success = setRelayState(3, requested);
+  if (!success) {
+    isSyncingCloudProperties = true;
+    motor = stateMotor;
+    isSyncingCloudProperties = false;
+  }
+}
+
+void onStreetLightChange() {
+  if (isSyncingCloudProperties) return;
+  bool requested = (bool)streetLight;
+  Serial.print(F("[ARDUINO CLOUD] onStreetLightChange -> Requested: "));
+  Serial.println(requested ? F("ON") : F("OFF"));
+  bool success = setRelayState(4, requested);
+  if (!success) {
+    isSyncingCloudProperties = true;
+    streetLight = stateStreetLight;
+    isSyncingCloudProperties = false;
+  }
+}
+
+void onExhaustFanChange() {
+  if (isSyncingCloudProperties) return;
+  bool requested = (bool)exhaustFan;
+  Serial.print(F("[ARDUINO CLOUD] onExhaustFanChange -> Requested: "));
+  Serial.println(requested ? F("ON") : F("OFF"));
+  bool success = setRelayState(5, requested);
+  if (!success) {
+    isSyncingCloudProperties = true;
+    exhaustFan = stateExhaust;
+    isSyncingCloudProperties = false;
+  }
+}
+
+// ==============================================================================
+// Safe Serial Monitor Command Interface for DEMO Simulation
+// ==============================================================================
+void handleSerialCommandInput() {
+  if (!Serial.available()) return;
+
+  String cmd = Serial.readStringUntil('\n');
+  cmd.trim();
+  if (cmd.length() == 0) return;
+
+  cmd.toUpperCase();
+
+  if (cmd == "NORMAL" || cmd == "SIM:NORMAL" || cmd == "SIM NORMAL") {
+    isSimulationActive = true;
+    simulatedAdc = SIMULATED_ADC_NORMAL;
+    simulationScenario = "NORMAL";
+    Serial.println(F("----------------------------------------------------"));
+    Serial.println(F("[SIMULATED ADC] Scenario: NORMAL (Safe Baseline)"));
+    Serial.print(F("[SIMULATED ADC] Synthetic Raw ADC forced to: "));
+    Serial.println(SIMULATED_ADC_NORMAL);
+    Serial.println(F("[SIMULATED ADC] Notice: Educational demo only. Zero real gas used."));
+    Serial.println(F("----------------------------------------------------"));
+  } else if (cmd == "GAS_DETECTED" || cmd == "SIM:GAS_DETECTED" || cmd == "SIM GAS_DETECTED") {
+    isSimulationActive = true;
+    simulatedAdc = SIMULATED_ADC_GAS_DETECTED;
+    simulationScenario = "GAS_DETECTED";
+    Serial.println(F("----------------------------------------------------"));
+    Serial.println(F("[SIMULATED ADC] Scenario: GAS_DETECTED (Danger Threshold Exceeded)"));
+    Serial.print(F("[SIMULATED ADC] Synthetic Raw ADC forced to: "));
+    Serial.println(SIMULATED_ADC_GAS_DETECTED);
+    Serial.println(F("[SIMULATED ADC] Notice: Educational demo only. Zero real gas used."));
+    Serial.println(F("----------------------------------------------------"));
+  } else if (cmd == "GAS_CLEARED" || cmd == "SIM:GAS_CLEARED" || cmd == "SIM GAS_CLEARED") {
+    isSimulationActive = true;
+    simulatedAdc = SIMULATED_ADC_GAS_CLEARED;
+    simulationScenario = "GAS_CLEARED";
+    Serial.println(F("----------------------------------------------------"));
+    Serial.println(F("[SIMULATED ADC] Scenario: GAS_CLEARED (Safe Clear Threshold < 900)"));
+    Serial.print(F("[SIMULATED ADC] Synthetic Raw ADC forced to: "));
+    Serial.println(SIMULATED_ADC_GAS_CLEARED);
+    Serial.println(F("[SIMULATED ADC] Notice: Educational demo only. Zero real gas used."));
+    Serial.println(F("----------------------------------------------------"));
+  } else if (cmd == "PHYSICAL" || cmd == "SIM:OFF" || cmd == "SIM OFF" || cmd == "REAL") {
+    isSimulationActive = false;
+    simulationScenario = "PHYSICAL";
+    Serial.println(F("----------------------------------------------------"));
+    Serial.println(F("[SIMULATED ADC] Simulation DEACTIVATED."));
+    Serial.println(F("[SIMULATED ADC] Returned to live hardware ADC on GPIO 34 (PIN_MQ2_ANALOG)."));
+    Serial.println(F("----------------------------------------------------"));
+  } else if (cmd == "HELP" || cmd == "SIM:HELP") {
+    Serial.println(F("================= SIMULATION COMMANDS ================="));
+    Serial.println(F("  NORMAL        - Set synthetic ADC to 320 (Safe/Baseline)"));
+    Serial.println(F("  GAS_DETECTED  - Set synthetic ADC to 2100 (Emergency Danger)"));
+    Serial.println(F("  GAS_CLEARED   - Set synthetic ADC to 450 (Recovery Safe)"));
+    Serial.println(F("  PHYSICAL      - Return to live physical MQ-2 reading on GPIO 34"));
+    Serial.println(F("======================================================="));
+  }
 }
 
 // ==============================================================================
@@ -917,7 +1357,7 @@ void reportMotorTripToSupabase() {
   configureTlsClient(client);
 
   HTTPClient https;
-  String endpoint = String(SUPABASE_GATEWAY_URL) + "?action=motor_trip";
+  String endpoint = buildGatewayUrl("motor_trip");
 
   if (!https.begin(client, endpoint)) {
     Serial.print(F(
@@ -978,7 +1418,7 @@ void reportSafetyResetToSupabase(const char *source) {
   configureTlsClient(client);
 
   HTTPClient https;
-  String endpoint = String(SUPABASE_GATEWAY_URL) + "?action=safety_reset";
+  String endpoint = buildGatewayUrl("safety_reset");
 
   if (!https.begin(client, endpoint)) {
     Serial.print(
@@ -1353,7 +1793,7 @@ bool testSupabaseHttpsConnectivity(bool verbose) {
   // 6. Endpoint URL Construction & HTTPClient begin() Diagnostic
   Serial.println(
       F("\n--- 6. Endpoint URL Construction & HTTPClient Initialization ---"));
-  String testEndpoint = String(SUPABASE_GATEWAY_URL) + "?action=poll_commands";
+  String testEndpoint = buildGatewayUrl("poll_commands");
   Serial.print(F("Base URL             : "));
   Serial.println(SUPABASE_BASE_URL);
   Serial.print(F("Gateway URL          : "));
@@ -1386,21 +1826,21 @@ bool testSupabaseHttpsConnectivity(bool verbose) {
 // ==============================================================================
 // Send Sensor Readings to Supabase Secure Gateway
 // ==============================================================================
-void sendTelemetryToSupabase() {
+int sendTelemetryToSupabase() {
   if (WiFi.status() != WL_CONNECTED)
-    return;
+    return -1;
 
   WiFiClientSecure client;
   configureTlsClient(client);
 
   HTTPClient https;
-  String endpoint = String(SUPABASE_GATEWAY_URL) + "?action=telemetry";
+  String endpoint = buildGatewayUrl("telemetry");
 
   if (!https.begin(client, endpoint)) {
     Serial.print(
         F("[TELEMETRY ERROR] HTTPClient::begin() failed for endpoint: "));
     Serial.println(endpoint);
-    return;
+    return -2;
   }
 
   https.addHeader("Content-Type", "application/json");
@@ -1408,7 +1848,7 @@ void sendTelemetryToSupabase() {
   https.addHeader("apikey", SUPABASE_ANON_KEY);
   https.setTimeout(3500);
 
-  StaticJsonDocument<768> doc;
+  StaticJsonDocument<1024> doc;
 
   // INA219: Transmit null if disconnected/faulty; never send fabricated numbers
   if (ina219Valid && !isnan(busVoltage_V)) {
@@ -1450,6 +1890,38 @@ void sendTelemetryToSupabase() {
   doc["sensor_fault"] = isSensorFaultActive;
   doc["dht_fault"] = !dhtValid;
   doc["ina219_fault"] = !ina219Valid;
+
+  // 5 Relay Physical Output States & Pre-Emergency Snapshot States
+  doc["state_light"] = stateLight;
+  doc["state_fan"] = stateFan;
+  doc["state_motor"] = stateMotor;
+  doc["state_street_light"] = stateStreetLight;
+  doc["state_exhaust"] = stateExhaust;
+  doc["pre_light"] = previousLightState;
+  doc["pre_fan"] = previousFanState;
+  doc["pre_motor"] = previousMotorState;
+  doc["pre_street_light"] = previousStreetLightState;
+  doc["pre_exhaust"] = previousExhaustFanState;
+  doc["snapshot_saved"] = stateSnapshotSaved;
+
+  // DEMO Emergency Cycle & Workflow Attributes
+  if (strlen(currentEmergencyCycleId) > 0) {
+    doc["emergency_cycle_id"] = currentEmergencyCycleId;
+  } else {
+    doc["emergency_cycle_id"] = nullptr;
+  }
+  doc["demo_mode"] = DEMO_MODE;
+  if (currentEmergencyEventType.length() > 0) {
+    doc["event_type"] = currentEmergencyEventType;
+  } else {
+    doc["event_type"] = nullptr;
+  }
+  doc["restoration_completed"] = restorationCompletedFlag;
+  doc["buzzer_active"] = (buzzerToneState || digitalRead(PIN_BUZZER) == HIGH);
+  doc["separate_siren_active"] = false;
+  doc["is_simulated"] = isSimulationActive;
+  doc["simulation_scenario"] = isSimulationActive ? simulationScenario : "PHYSICAL";
+
   doc["exhaust_fan_active"] = stateExhaust;
   doc["hazardous_exhaust_certified"] = HAZARDOUS_EXHAUST_CERTIFIED;
   doc["free_heap"] = ESP.getFreeHeap();
@@ -1490,6 +1962,7 @@ void sendTelemetryToSupabase() {
     }
   }
   https.end();
+  return httpResponseCode;
 }
 
 // ==============================================================================
@@ -1503,7 +1976,7 @@ void pollPendingCommandsFromSupabase() {
   configureTlsClient(client);
 
   HTTPClient https;
-  String endpoint = String(SUPABASE_GATEWAY_URL) + "?action=poll_commands";
+  String endpoint = buildGatewayUrl("poll_commands");
 
   if (!https.begin(client, endpoint)) {
     Serial.print(F("[POLL ERROR] HTTPClient::begin() failed for endpoint: "));
@@ -1671,23 +2144,21 @@ void pollPendingCommandsFromSupabase() {
             continue;
           }
 
-          // All hardware safety checks passed: Disarm local lockout and re-arm
-          // contactor
-          isGasLockoutActive = false;
-          gasClearedPendingReset = false;
-          isMainContactorTripped = false;
+          // All hardware safety checks passed: Disarm local lockout
+          clearSafetyStateInPreferences();
           digitalWrite(PIN_BUZZER, LOW);
           buzzerToneState = false;
 
-          // CRITICAL: Relays REMAIN OFF after reset. Never automatically
-          // energize relays!
+          // CRITICAL: Relays REMAIN OFF after reset. Never automatically energize relays!
           digitalWrite(PIN_RELAY_LIGHT, RELAY_OFF);
           digitalWrite(PIN_RELAY_FAN, RELAY_OFF);
           digitalWrite(PIN_RELAY_MOTOR, RELAY_OFF);
+          digitalWrite(PIN_RELAY_STREET_LIGHT, RELAY_OFF);
           digitalWrite(PIN_RELAY_EXHAUST, RELAY_OFF);
           stateLight = false;
           stateFan = false;
           stateMotor = false;
+          stateStreetLight = false;
           stateExhaust = false;
 
           // Double success chime
@@ -1701,7 +2172,7 @@ void pollPendingCommandsFromSupabase() {
 
           Serial.println(
               F("[SAFETY RESET APPROVED] ESP32 verified safe atmosphere. "
-                "Lockout disarmed. Contactor re-armed. Relays remain OFF."));
+                "Lockout disarmed. Relays remain OFF."));
           int ackCode = ackCommandToSupabase(
               commandId, deviceId, "acknowledged", false,
               "Lockout cleared by authorized safety reset", 10);
@@ -1709,6 +2180,35 @@ void pollPendingCommandsFromSupabase() {
           Serial.print(commandId);
           Serial.print(F(" | HTTP ACK Response Code: "));
           Serial.println(ackCode);
+          continue;
+        }
+
+        // Handle remote restoration of pre-emergency states with explicit authorization
+        if (strcmp(action, "RESTORE_PRE_EMERGENCY_STATES") == 0) {
+          if (isGasLockoutActive || gasClearedPendingReset || (gasStatus == "danger")) {
+            Serial.println(F("[RESTORE REJECTED] Cannot restore devices while gas hazard or lockout is active."));
+            ackCommandToSupabase(commandId, deviceId, "rejected_gas_safety", false,
+                                 "RESTORE_BLOCKED: Lockout active or gas unsafe", 10);
+            continue;
+          }
+
+          if (!stateSnapshotSaved) {
+            Serial.println(F("[RESTORE INFO] No pre-emergency snapshot recorded."));
+            ackCommandToSupabase(commandId, deviceId, "acknowledged", false,
+                                 "RESTORE_NOOP: No pre-emergency snapshot exists", 10);
+            continue;
+          }
+
+          Serial.println(F("[RESTORE] Restoring pre-emergency device states:"));
+          setRelayState(1, previousLightState);
+          setRelayState(2, previousFanState);
+          setRelayState(3, previousMotorState);
+          setRelayState(4, previousStreetLightState);
+          setRelayState(5, previousExhaustFanState);
+          stateSnapshotSaved = false;
+
+          ackCommandToSupabase(commandId, deviceId, "acknowledged", true,
+                               "Pre-emergency relay states successfully restored", 10);
           continue;
         }
 
@@ -1750,8 +2250,7 @@ void pollPendingCommandsFromSupabase() {
                   : "failed",
               !targetState,
               (isGasLockoutActive || gasClearedPendingReset)
-                  ? "Relay actuation blocked by local gas safety lockout / "
-                    "contactor trip"
+                  ? "Relay actuation blocked by local gas safety lockout"
                   : "Relay actuation failed (channel invalid or unused)",
               rttMs);
         }
@@ -1799,7 +2298,7 @@ int ackCommandToSupabase(const char *commandId, const char *deviceId,
   configureTlsClient(client);
 
   HTTPClient https;
-  String endpoint = String(SUPABASE_GATEWAY_URL) + "?action=ack_command";
+  String endpoint = buildGatewayUrl("ack_command");
 
   int httpCode = -1;
   if (!https.begin(client, endpoint)) {
@@ -1870,7 +2369,7 @@ void sendHeartbeatToSupabase() {
   configureTlsClient(client);
 
   HTTPClient https;
-  String endpoint = String(SUPABASE_GATEWAY_URL) + "?action=heartbeat";
+  String endpoint = buildGatewayUrl("heartbeat");
 
   if (!https.begin(client, endpoint)) {
     Serial.print(

@@ -50,11 +50,11 @@ export const CalendarScheduleOverview: React.FC<{
   };
 
   return (
-    <Card className="p-4 sm:p-5 border-emerald-500/25 bg-[#141C23]/90 border-white/[0.08]">
+    <Card className="p-4 sm:p-5 border-cyan-500/25 bg-gradient-to-br from-slate-900/90 to-slate-950">
       {/* Calendar Header with live IST Clock */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-white/[0.08] gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-800 gap-3">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
+          <div className="p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
             <Calendar className="h-5 w-5" />
           </div>
           <div>
@@ -62,7 +62,7 @@ export const CalendarScheduleOverview: React.FC<{
               <h3 className="text-base font-bold text-slate-100">
                 Weekly Schedule Calendar Timeline
               </h3>
-              <Badge variant="emerald" size="sm">IST Timeline</Badge>
+              <Badge variant="teal" size="sm">IST Timeline</Badge>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
               Live scheduled trigger events mapped across the 7-day operational cycle
@@ -71,10 +71,10 @@ export const CalendarScheduleOverview: React.FC<{
         </div>
 
         {/* Live IST Clock Badge */}
-        <div className="flex items-center gap-2 bg-[#0B0F12]/80 px-3 py-1.5 rounded-xl border border-white/[0.08] text-xs font-mono">
-          <Clock className="h-3.5 w-3.5 text-emerald-400 animate-pulse" />
+        <div className="flex items-center gap-2 bg-slate-950/80 px-3 py-1.5 rounded-xl border border-slate-800 text-xs font-mono">
+          <Clock className="h-3.5 w-3.5 text-cyan-400 animate-pulse" />
           <span className="text-slate-400">Current IST:</span>
-          <span className="text-emerald-300 font-bold">{currentIST.formattedDisplay}</span>
+          <span className="text-cyan-300 font-bold">{currentIST.formattedDisplay}</span>
         </div>
       </div>
 
@@ -89,19 +89,19 @@ export const CalendarScheduleOverview: React.FC<{
               key={day}
               className={`rounded-2xl p-2.5 flex flex-col border transition-all ${
                 isToday
-                  ? 'bg-gradient-to-b from-emerald-950/40 via-[#141C23] to-[#0B0F12] border-emerald-500/40 shadow-glow-emerald ring-1 ring-emerald-400/30'
-                  : 'bg-[#0B0F12]/60 border-white/[0.06]'
+                  ? 'bg-gradient-to-b from-cyan-950/40 via-slate-900/90 to-slate-950 border-cyan-500/40 shadow-[0_0_20px_rgba(6,182,212,0.15)] ring-1 ring-cyan-400/30'
+                  : 'bg-slate-950/60 border-slate-800/80'
               }`}
             >
               {/* Day Header */}
-              <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/[0.08]">
+              <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800/80">
                 <span className={`text-xs font-mono font-bold uppercase ${
-                  isToday ? 'text-emerald-300' : 'text-slate-400'
+                  isToday ? 'text-cyan-300' : 'text-slate-400'
                 }`}>
                   {day}
                 </span>
                 {isToday && (
-                  <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                  <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
                     TODAY
                   </span>
                 )}

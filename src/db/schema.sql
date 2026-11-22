@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS public.devices (
   device_slug TEXT NOT NULL, -- e.g. 'relay-1', 'relay-2', 'relay-3', 'relay-4'
   name TEXT NOT NULL,
   type TEXT NOT NULL CHECK (type IN ('light', 'fan', 'motor', 'exhaust_fan')),
-  relay_channel INT NOT NULL CHECK (relay_channel BETWEEN 1 AND 4),
+  relay_channel INT NOT NULL CHECK (relay_channel BETWEEN 1 AND 5),
   gpio_pin INT NOT NULL,
   state BOOLEAN NOT NULL DEFAULT false,
   control_mode TEXT NOT NULL DEFAULT 'MANUAL' CHECK (control_mode IN ('MANUAL', 'AUTO')),

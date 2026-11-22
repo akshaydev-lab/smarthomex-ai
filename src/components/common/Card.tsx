@@ -17,8 +17,8 @@ export const Card: React.FC<CardProps> = ({
     <div
       className={cn(
         'glass-card rounded-2xl p-5 relative overflow-hidden',
-        glowBorder && 'border-emerald-500/35 shadow-glow-emerald',
-        interactive && 'cursor-pointer hover:border-emerald-500/40 hover:-translate-y-0.5',
+        glowBorder && 'border-cyan-500/30 shadow-glow-cyan',
+        interactive && 'cursor-pointer hover:border-cyan-400/40 hover:-translate-y-1',
         className
       )}
       {...props}

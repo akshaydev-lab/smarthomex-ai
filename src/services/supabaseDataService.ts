@@ -622,6 +622,7 @@ export async function fetchLatestSensorTelemetry(userId: string) {
       .from('sensor_readings')
       .select('*')
       .eq('user_id', userId)
+      .or('is_demo.is.null,is_demo.eq.false')
       .order('recorded_at', { ascending: false })
       .limit(1)
       .maybeSingle();

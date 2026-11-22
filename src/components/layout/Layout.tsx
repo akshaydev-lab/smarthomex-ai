@@ -11,8 +11,8 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-[#0B0F12] text-[#F8FAFC] flex flex-col relative overflow-x-hidden selection:bg-emerald-500 selection:text-slate-950">
-      {/* Subtle emerald architectural ambient lighting */}
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col relative overflow-x-hidden">
+      {/* Ambient glowing background orbs */}
       <div className="ambient-bg">
         <div className="ambient-orb-1" />
         <div className="ambient-orb-2" />
@@ -22,26 +22,29 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
       {/* Live System Feedback Toast Container */}
       <LiveNotificationToast />
 
-      {/* Full-Screen Red Emergency Gas Alert Modal (Highest Priority) */}
+      {/* Full-Screen Red Emergency Gas Alert Modal */}
       <GasEmergencyModal />
 
-      {/* Responsive Emerald Sidebar */}
+      {/* Responsive Sidebar */}
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       {/* Main Content Area */}
-      <div className="lg:pl-72 flex-1 flex flex-col min-h-screen relative z-10 pb-16 lg:pb-8">
-        <Header onMenuToggle={() => setSidebarOpen(prev => !prev)} />
+      <div className="lg:pl-64 flex flex-col flex-1 min-w-0 z-10">
+        <Header onMenuToggle={() => setSidebarOpen(true)} />
 
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto animate-fade-in">
-          {/* Dashboard Persistent Emergency Hazard Indicator */}
-          <EmergencyStatusBanner />
+        {/* Demo Simulation Warning Notice */}
+        <DemoNotice />
 
-          <DemoNotice />
+        {/* Real-Time Life-Safety Emergency Lockout Banner */}
+        <EmergencyStatusBanner />
+
+        {/* Page Content */}
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto pb-24 lg:pb-8">
           {children}
         </main>
       </div>
 
-      {/* Mobile Bottom Navigation */}
+      {/* Mobile Bottom Navigation Bar */}
       <MobileNav />
     </div>
   );

@@ -171,9 +171,9 @@ export const SettingsPage: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Header Bar */}
-      <Card className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#141C23]/90 border-white/[0.08]">
+      <Card className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
+          <div className="p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
             <Settings className="h-5 w-5" />
           </div>
           <div>
@@ -185,7 +185,7 @@ export const SettingsPage: React.FC = () => {
         </div>
 
         {savedSuccess && (
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-xl border border-emerald-500/30 animate-fade-in shadow-glow-emerald">
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-xl border border-emerald-500/30 animate-fade-in">
             <CheckCircle2 className="h-4 w-4" />
             <span>Settings saved successfully!</span>
           </div>
@@ -194,13 +194,13 @@ export const SettingsPage: React.FC = () => {
 
       <form onSubmit={handleSave} className="space-y-6">
         {/* Section 1: ESP32 Hardware Network Configuration */}
-        <Card className="p-5 bg-[#141C23]/90 border-white/[0.08]">
-          <div className="flex items-center justify-between pb-3 border-b border-white/[0.08] mb-4">
+        <Card className="p-5">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
             <div className="flex items-center gap-2">
-              <Cpu className="h-5 w-5 text-emerald-400" />
+              <Cpu className="h-5 w-5 text-cyan-400" />
               <h3 className="text-sm font-bold text-slate-100">ESP32 Hardware Bridge Configuration</h3>
             </div>
-            <Badge variant="emerald" size="sm">Phase 2 Target</Badge>
+            <Badge variant="teal" size="sm">Phase 2 Target</Badge>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
@@ -213,7 +213,7 @@ export const SettingsPage: React.FC = () => {
                 value={formData.esp32IpAddress}
                 onChange={(e) => setFormData({ ...formData, esp32IpAddress: e.target.value })}
                 placeholder="192.168.1.185"
-                className="glass-input w-full px-3 py-2 rounded-xl text-slate-100 font-mono bg-[#0B0F12]/80 border-white/[0.08]"
+                className="glass-input w-full px-3 py-2 rounded-xl text-slate-100 font-mono"
               />
               <span className="text-[11px] text-slate-400 mt-1 block">
                 Local Wi-Fi IP assigned by home router to the ESP32 microcontroller
@@ -229,7 +229,7 @@ export const SettingsPage: React.FC = () => {
                 value={formData.mqttBroker}
                 onChange={(e) => setFormData({ ...formData, mqttBroker: e.target.value })}
                 placeholder="mqtt://broker.emqx.io:1883"
-                className="glass-input w-full px-3 py-2 rounded-xl text-slate-100 font-mono bg-[#0B0F12]/80 border-white/[0.08]"
+                className="glass-input w-full px-3 py-2 rounded-xl text-slate-100 font-mono"
               />
               <span className="text-[11px] text-slate-400 mt-1 block">
                 Public or private MQTT broker URL for bidirectional publish/subscribe
@@ -245,7 +245,7 @@ export const SettingsPage: React.FC = () => {
                 value={formData.esp32MqttTopic}
                 onChange={(e) => setFormData({ ...formData, esp32MqttTopic: e.target.value })}
                 placeholder="smarthomex/main-board"
-                className="glass-input w-full px-3 py-2 rounded-xl text-slate-100 font-mono bg-[#0B0F12]/80 border-white/[0.08]"
+                className="glass-input w-full px-3 py-2 rounded-xl text-slate-100 font-mono"
               />
             </div>
 
@@ -265,7 +265,7 @@ export const SettingsPage: React.FC = () => {
           </div>
 
           {mqttStatus && (
-            <div className="mt-3 p-2.5 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 text-xs font-mono animate-fade-in">
+            <div className="mt-3 p-2.5 rounded-xl bg-teal-950/40 border border-teal-500/30 text-teal-300 text-xs font-mono animate-fade-in">
               {mqttStatus}
             </div>
           )}
@@ -430,8 +430,8 @@ export const SettingsPage: React.FC = () => {
         </Card>
 
         {/* Section 2: Safety Threshold Configuration */}
-        <Card className="p-5 bg-[#141C23]/90 border-white/[0.08]">
-          <div className="flex items-center justify-between pb-3 border-b border-white/[0.08] mb-4">
+        <Card className="p-5">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
             <div className="flex items-center gap-2">
               <ShieldAlert className="h-5 w-5 text-rose-400" />
               <h3 className="text-sm font-bold text-slate-100">Safety & Trip Thresholds</h3>
@@ -448,7 +448,7 @@ export const SettingsPage: React.FC = () => {
                 type="number"
                 value={formData.gasAlarmThreshold}
                 onChange={(e) => setFormData({ ...formData, gasAlarmThreshold: Number(e.target.value) })}
-                className="glass-input w-full px-3 py-2 rounded-xl text-slate-100 font-mono bg-[#0B0F12]/80 border-white/[0.08]"
+                className="glass-input w-full px-3 py-2 rounded-xl text-slate-100 font-mono"
               />
               <span className="text-[11px] text-slate-400 mt-1 block">
                 Trips Relay 4 (Exhaust) + Buzzer when exceeded
@@ -463,7 +463,7 @@ export const SettingsPage: React.FC = () => {
                 type="number"
                 value={formData.tempAlarmThreshold}
                 onChange={(e) => setFormData({ ...formData, tempAlarmThreshold: Number(e.target.value) })}
-                className="glass-input w-full px-3 py-2 rounded-xl text-slate-100 font-mono bg-[#0B0F12]/80 border-white/[0.08]"
+                className="glass-input w-full px-3 py-2 rounded-xl text-slate-100 font-mono"
               />
               <span className="text-[11px] text-slate-400 mt-1 block">
                 High temperature warning point for DHT11
@@ -478,7 +478,7 @@ export const SettingsPage: React.FC = () => {
                 type="number"
                 value={formData.powerAlarmThreshold}
                 onChange={(e) => setFormData({ ...formData, powerAlarmThreshold: Number(e.target.value) })}
-                className="glass-input w-full px-3 py-2 rounded-xl text-slate-100 font-mono bg-[#0B0F12]/80 border-white/[0.08]"
+                className="glass-input w-full px-3 py-2 rounded-xl text-slate-100 font-mono"
               />
               <span className="text-[11px] text-slate-400 mt-1 block">
                 Current overload guard via INA219
@@ -488,14 +488,14 @@ export const SettingsPage: React.FC = () => {
         </Card>
 
         {/* Section 3: Audio & Simulation Toggles */}
-        <Card className="p-5 bg-[#141C23]/90 border-white/[0.08]">
-          <div className="flex items-center gap-2 pb-3 border-b border-white/[0.08] mb-4">
-            <Volume2 className="h-5 w-5 text-emerald-400" />
+        <Card className="p-5">
+          <div className="flex items-center gap-2 pb-3 border-b border-slate-800 mb-4">
+            <Volume2 className="h-5 w-5 text-cyan-400" />
             <h3 className="text-sm font-bold text-slate-100">Preferences & Simulation Sandbox</h3>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-            <div className="p-3 rounded-xl bg-[#0B0F12]/80 border border-white/[0.06] flex items-center justify-between">
+            <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 flex items-center justify-between">
               <div>
                 <span className="font-semibold text-slate-200 block">HomeX Voice Audio Feedback</span>
                 <span className="text-[11px] text-slate-400">Speak vocal responses using Web SpeechSynthesis</span>
@@ -504,12 +504,12 @@ export const SettingsPage: React.FC = () => {
                 type="checkbox"
                 checked={formData.voiceFeedbackEnabled}
                 onChange={(e) => setFormData({ ...formData, voiceFeedbackEnabled: e.target.checked })}
-                className="h-4 w-4 accent-emerald-500 rounded cursor-pointer"
+                className="h-4 w-4 accent-cyan-500 rounded cursor-pointer"
               />
             </div>
 
             {!import.meta.env.PROD && (
-              <div className="p-3 rounded-xl bg-[#0B0F12]/80 border border-white/[0.06] flex items-center justify-between">
+              <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 flex items-center justify-between">
                 <div>
                   <span className="font-semibold text-slate-200 block">Demo Telemetry Fluctuations</span>
                   <span className="text-[11px] text-slate-400">Simulate realistic micro-variations in sensor streams (Dev only)</span>
@@ -518,13 +518,13 @@ export const SettingsPage: React.FC = () => {
                   type="checkbox"
                   checked={formData.demoSimulationActive}
                   onChange={(e) => setFormData({ ...formData, demoSimulationActive: e.target.checked })}
-                  className="h-4 w-4 accent-emerald-500 rounded cursor-pointer"
+                  className="h-4 w-4 accent-cyan-500 rounded cursor-pointer"
                 />
               </div>
             )}
 
             {/* Emergency Siren Audio Test */}
-            <div className="p-3 rounded-xl bg-[#0B0F12]/80 border border-white/[0.06] flex items-center justify-between col-span-1 md:col-span-2">
+            <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 flex items-center justify-between col-span-1 md:col-span-2">
               <div>
                 <span className="font-semibold text-slate-200 block">Website Emergency Siren Audio Test</span>
                 <span className="text-[11px] text-slate-400">Audibly test browser acoustic siren (960Hz / 770Hz) without triggering hardware or creating DB alerts</span>
@@ -560,18 +560,18 @@ export const SettingsPage: React.FC = () => {
         <SpeakerDiagnosticCard />
 
         {/* Section 5: Supabase Cloud Readiness */}
-        <Card className="p-5 bg-[#141C23]/90 border-white/[0.08]">
-          <div className="flex items-center justify-between pb-3 border-b border-white/[0.08] mb-4">
+        <Card className="p-5">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
             <div className="flex items-center gap-2">
-              <Database className="h-5 w-5 text-emerald-400" />
+              <Database className="h-5 w-5 text-teal-400" />
               <h3 className="text-sm font-bold text-slate-100">Supabase Backend Integration Status</h3>
             </div>
-            <Badge variant={supabaseConfig.isConfigured ? 'emerald' : 'slate'} size="sm">
+            <Badge variant={supabaseConfig.isConfigured ? 'emerald' : 'cyan'} size="sm">
               {supabaseConfig.isConfigured ? 'Live Cloud Connected' : 'Architecture & Client Ready'}
             </Badge>
           </div>
 
-          <div className="p-3.5 rounded-xl bg-[#0B0F12]/80 border border-white/[0.06] text-xs space-y-2.5">
+          <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800 text-xs space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="text-slate-400">Connection State:</span>
               <span className={`font-mono font-semibold ${supabaseConfig.isConfigured ? 'text-emerald-400' : 'text-amber-400'}`}>
@@ -581,7 +581,7 @@ export const SettingsPage: React.FC = () => {
             {supabaseConfig.isConfigured && (
               <div className="flex items-center justify-between">
                 <span className="text-slate-400">Project Endpoint:</span>
-                <span className="text-emerald-300 font-mono text-[11px] truncate max-w-[280px]">
+                <span className="text-cyan-300 font-mono text-[11px] truncate max-w-[280px]">
                   {supabaseConfig.supabaseUrl}
                 </span>
               </div>
@@ -594,7 +594,7 @@ export const SettingsPage: React.FC = () => {
               <span className="text-slate-400 block mb-1">Target PostgreSQL Schema (9 Tables):</span>
               <div className="flex flex-wrap gap-1 font-mono text-[10px]">
                 {['profiles', 'homes', 'devices', 'sensor_readings', 'device_commands', 'device_schedules', 'automation_rules', 'alerts', 'device_status'].map(t => (
-                  <span key={t} className="px-2 py-0.5 rounded bg-[#141C23] border border-white/[0.08] text-emerald-300 font-semibold">
+                  <span key={t} className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-cyan-300">
                     {t}
                   </span>
                 ))}
