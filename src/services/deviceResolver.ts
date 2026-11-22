@@ -132,11 +132,11 @@ export async function resolveDeviceInDatabase(
   if (channel === 3 || type === 'motor' || normalizedId === 'motor' || normalizedId === 'relay-3' || normalizedSlug === 'motor') {
     candidateSlugs.push('motor', 'relay-3', 'smart-motor', 'water-motor');
   }
-  if (channel === 4 || normalizedId === 'relay-4' || normalizedSlug === 'relay-4') {
-    candidateSlugs.push('relay-4', 'ch4');
+  if (channel === 4 || normalizedId === 'relay-4' || normalizedSlug === 'relay-4' || normalizedSlug === 'street-light' || normalizedId === 'street-light' || (device.name && device.name.toLowerCase().includes('street'))) {
+    candidateSlugs.push('street-light', 'street_light', 'street light', 'relay-4', 'ch4');
   }
-  if (channel === 5 || type === 'exhaust_fan' || normalizedId === 'relay-exhaust') {
-    candidateSlugs.push('relay-exhaust', 'exhaust_fan', 'exhaust');
+  if (channel === 5 || type === 'exhaust_fan' || normalizedId === 'relay-exhaust' || normalizedSlug === 'exhaust-fan' || (device.name && device.name.toLowerCase().includes('exhaust'))) {
+    candidateSlugs.push('exhaust-fan', 'exhaust_fan', 'exhaust fan', 'relay-exhaust', 'relay-5', 'exhaust');
   }
 
   // Deduplicate candidate slugs
@@ -156,10 +156,10 @@ export async function resolveDeviceInDatabase(
   }
 
   // -------------------------------------------------------------------------
-  // Strategy 3: Fallback by Relay Channel (1 to 4)
-  // Each physical relay channel on the 4-channel module is unique per controller
+  // Strategy 3: Fallback by Relay Channel (1 to 5)
+  // Each physical relay channel on the 5-channel system is unique per controller
   // -------------------------------------------------------------------------
-  if (device.relayChannel && device.relayChannel >= 1 && device.relayChannel <= 4) {
+  if (device.relayChannel && device.relayChannel >= 1 && device.relayChannel <= 5) {
     const { data, error } = await client
       .from('devices')
       .select(SELECT_COLS)
@@ -185,6 +185,67 @@ export async function resolveDeviceInDatabase(
 
     if (!error && data) {
       return data as ResolvedDatabaseDevice;
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Strategy 5: Auto-provision canonical 5 devices if not yet registered in database
+  // Prevents DEVICE_NOT_FOUND errors when UI communicates with fresh or unmigrated user accounts
+  // -------------------------------------------------------------------------
+  const targetChannel = (device.relayChannel && device.relayChannel >= 1 && device.relayChannel <= 5)
+    ? device.relayChannel
+    : candidateSlugs.includes('light') || candidateSlugs.includes('relay-1') ? 1
+    : candidateSlugs.includes('fan') || candidateSlugs.includes('relay-2') ? 2
+    : candidateSlugs.includes('motor') || candidateSlugs.includes('relay-3') ? 3
+    : candidateSlugs.includes('street-light') || candidateSlugs.includes('street_light') || candidateSlugs.includes('relay-4') ? 4
+    : candidateSlugs.includes('exhaust-fan') || candidateSlugs.includes('exhaust_fan') || candidateSlugs.includes('relay-exhaust') ? 5
+    : 0;
+
+  if (targetChannel >= 1 && targetChannel <= 5) {
+    try {
+      const { data: homeData } = await client
+        .from('homes')
+        .select('id')
+        .eq('user_id', userId)
+        .limit(1)
+        .maybeSingle();
+
+      const homeId = homeData?.id;
+      if (homeId) {
+        const canonicals: Record<number, { name: string; slug: string; gpio: number; type: string; room: string; rated: number }> = {
+          1: { name: 'Light', slug: 'light', gpio: 25, type: 'light', room: 'Living Room', rated: 45 },
+          2: { name: 'Fan', slug: 'fan', gpio: 26, type: 'fan', room: 'Master Bedroom', rated: 75 },
+          3: { name: 'Motor', slug: 'motor', gpio: 27, type: 'motor', room: 'Utility / Pump Room', rated: 750 },
+          4: { name: 'Street Light', slug: 'street-light', gpio: 14, type: 'light', room: 'Outdoor / Street', rated: 100 },
+          5: { name: 'Exhaust Fan', slug: 'exhaust-fan', gpio: 32, type: 'exhaust_fan', room: 'Kitchen Area', rated: 60 },
+        };
+        const c = canonicals[targetChannel];
+        if (c) {
+          const { data: inserted, error: insErr } = await client
+            .from('devices')
+            .insert({
+              user_id: userId,
+              home_id: homeId,
+              name: device.name || c.name,
+              device_slug: c.slug,
+              relay_channel: targetChannel,
+              gpio_pin: device.gpioPin || c.gpio,
+              type: (device.type && device.type !== 'unused') ? device.type : c.type,
+              state: false,
+              room: device.room || c.room,
+              power_watts: 0,
+              rated_watts: device.ratedWatts || c.rated,
+            })
+            .select(SELECT_COLS)
+            .maybeSingle();
+
+          if (!insErr && inserted) {
+            return inserted as ResolvedDatabaseDevice;
+          }
+        }
+      }
+    } catch {
+      // Graceful fallback to null on provisioning failure
     }
   }
 

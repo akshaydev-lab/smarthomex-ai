@@ -110,7 +110,7 @@ export const SchedulesPage: React.FC = () => {
             <span className="text-2xl font-bold font-mono text-slate-100">{schedules.length}</span>
             <span className="text-xs text-slate-400 font-mono">Tasks</span>
           </div>
-          <span className="text-[10px] text-emerald-400 font-mono mt-1 block">4-Channel Relays</span>
+          <span className="text-[10px] text-emerald-400 font-mono mt-1 block">5-Channel Relays</span>
         </Card>
 
         <Card className="p-3.5 bg-[#141C23]/90 border-white/[0.08]">
@@ -179,7 +179,7 @@ export const SchedulesPage: React.FC = () => {
             onChange={(e) => setDeviceFilter(e.target.value)}
             className="glass-input px-3 py-1.5 rounded-xl text-xs text-slate-200 bg-[#0B0F12] border-white/[0.08]"
           >
-            <option value="all">All Devices (4 Relays)</option>
+            <option value="all">All Devices (5 Relays)</option>
             {devices.map(d => (
               <option key={d.id} value={d.id}>
                 {d.name} (Ch {d.relayChannel})

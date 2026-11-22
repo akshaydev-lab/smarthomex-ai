@@ -646,7 +646,7 @@ export const AuthPage: React.FC = () => {
             </div>
             <h2 className="text-xl font-bold text-slate-100">Welcome to SmartHomeX AI</h2>
             <p className="text-xs text-slate-400 mt-1">
-              Sign in to access your 4-channel ESP32 relays and telemetry stream
+              Sign in to access your 5-channel ESP32 relays and telemetry stream
             </p>
           </div>
 

@@ -176,7 +176,7 @@ export const OverviewPage: React.FC = () => {
               SmartHomeX AI Dashboard
             </h1>
             <p className="text-xs sm:text-sm text-[#94A3B8] mt-1 max-w-2xl leading-relaxed">
-              Industrial-grade IoT telemetry, 4-channel active-LOW relay automation, and life-safety monitoring for your home.
+              Industrial-grade IoT telemetry, 5-channel active-LOW relay automation, and life-safety monitoring for your home.
             </p>
           </div>
 
@@ -492,7 +492,7 @@ export const OverviewPage: React.FC = () => {
         </div>
       )}
 
-      {/* 5. Master 4-Channel Relay Control Bar */}
+      {/* 5. Master 5-Channel Relay Control Bar */}
       <MasterControl />
 
       {/* 6. 4 Dedicated Device Relay Cards */}
@@ -500,7 +500,7 @@ export const OverviewPage: React.FC = () => {
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <Cpu className="h-5 w-5 text-emerald-400" />
-            <h2 className="text-lg font-bold text-[#F8FAFC]">ESP32 4-Channel Relays</h2>
+            <h2 className="text-lg font-bold text-[#F8FAFC]">ESP32 5-Channel Relays</h2>
             <Badge variant={hardwareBridge.esp32Connected ? 'emerald' : 'demo'} size="sm">
               {hardwareBridge.esp32Connected ? 'Hardware Active' : 'Demo Emulation'}
             </Badge>
@@ -515,7 +515,7 @@ export const OverviewPage: React.FC = () => {
           </Button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
           {devices.map(device => (
             <DeviceCard key={device.id} device={device} onToggle={toggleDevice} />
           ))}

@@ -13,10 +13,11 @@ import type {
 export const INITIAL_DEVICES: Device[] = [
   {
     id: 'relay-1',
-    name: 'Living Room Light',
+    deviceSlug: 'light',
+    name: 'Light',
     type: 'light',
     relayChannel: 1,
-    gpioPin: 14,
+    gpioPin: 25,
     state: false, // Default OFF on boot
     room: 'Living Room',
     powerWatts: 0,
@@ -30,10 +31,11 @@ export const INITIAL_DEVICES: Device[] = [
   },
   {
     id: 'relay-2',
-    name: 'Master Ceiling Fan',
+    deviceSlug: 'fan',
+    name: 'Fan',
     type: 'fan',
     relayChannel: 2,
-    gpioPin: 25,
+    gpioPin: 26,
     state: false, // Default OFF on boot
     room: 'Master Bedroom',
     powerWatts: 0,
@@ -47,10 +49,11 @@ export const INITIAL_DEVICES: Device[] = [
   },
   {
     id: 'relay-3',
-    name: 'Water Booster Motor',
+    deviceSlug: 'motor',
+    name: 'Motor',
     type: 'motor',
     relayChannel: 3,
-    gpioPin: 26,
+    gpioPin: 27,
     state: false, // Default OFF on boot
     room: 'Utility / Pump Room',
     powerWatts: 0,
@@ -66,15 +69,16 @@ export const INITIAL_DEVICES: Device[] = [
   },
   {
     id: 'relay-4',
-    name: '4-Ch Relay Ch 4 (Unused)',
-    type: 'unused',
+    deviceSlug: 'street-light',
+    name: 'Street Light',
+    type: 'light',
     relayChannel: 4,
-    gpioPin: 0, // Unused channel on 4-channel module
-    state: false, // Always OFF / Unused
-    room: 'Hardware Panel',
+    gpioPin: 14, // 4-Ch Relay Board Ch 4
+    state: false, // Default OFF on boot
+    room: 'Outdoor / Street',
     powerWatts: 0,
-    ratedWatts: 0,
-    lastToggled: 'Never',
+    ratedWatts: 100,
+    lastToggled: 'On system startup',
     isHardwareConnected: false,
     controlMode: 'MANUAL',
     manualOverrideActive: false,
@@ -83,10 +87,11 @@ export const INITIAL_DEVICES: Device[] = [
   },
   {
     id: 'relay-exhaust',
-    name: 'Automatic Exhaust Fan',
+    deviceSlug: 'exhaust-fan',
+    name: 'Exhaust Fan',
     type: 'exhaust_fan',
-    relayChannel: 5, // Separate Single-Channel Relay
-    gpioPin: 27,
+    relayChannel: 5, // Separate DC Switching Driver / Relay
+    gpioPin: 32,
     state: false, // Default OFF on boot
     room: 'Kitchen Area',
     powerWatts: 0,

@@ -14,7 +14,8 @@ import type {
   INA219Reading,
   HardwareBridgeStatus,
   DeviceControlMode,
-  DeviceCommandRecord
+  DeviceCommandRecord,
+  LiveToast
 } from '../types';
 import { 
   INITIAL_DEVICES, 
@@ -162,6 +163,11 @@ interface SmartHomeContextType {
   // Active load summary
   activeDeviceCount: number;
   totalActiveWatts: number;
+
+  // Live Toast Notifications
+  toasts: LiveToast[];
+  addToast: (toast: Omit<LiveToast, 'id' | 'timestamp'> & { id?: string; timestamp?: string }) => void;
+  dismissToast: (id: string) => void;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -188,6 +194,23 @@ const SmartHomeContext = createContext<SmartHomeContextType | undefined>(undefin
 
 export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentPage, setCurrentPage] = useState<NavigationPage>('overview');
+
+  // Live Toast Notifications System
+  const [toasts, setToasts] = useState<LiveToast[]>([]);
+  const addToast = useCallback((t: Omit<LiveToast, 'id' | 'timestamp'> & { id?: string; timestamp?: string }) => {
+    const id = t.id || `toast-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const timestamp = t.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const newToast: LiveToast = { ...t, id, timestamp };
+    setToasts(prev => [newToast, ...prev.filter(item => item.id !== id)].slice(0, 8));
+    if (t.duration !== 0) {
+      setTimeout(() => {
+        setToasts(prev => prev.filter(item => item.id !== id));
+      }, t.duration || 4500);
+    }
+  }, []);
+  const dismissToast = useCallback((id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
   const [devices, setDevices] = useState<Device[]>(() => {
     const saved = localStorage.getItem('smarthomex_devices');
     if (saved) {
@@ -460,31 +483,45 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
         if (remoteDevices && remoteDevices.length > 0) {
           setDevices(prev => {
-            return remoteDevices.map(rd => {
-              const localMatch = prev.find(p => 
-                p.id === rd.id || 
-                (p.dbId && p.dbId === rd.dbId) || 
-                p.relayChannel === rd.relayChannel ||
-                (rd.deviceSlug && (p.deviceSlug === rd.deviceSlug || p.id === rd.deviceSlug))
+            const baseList = prev.length >= 5 ? prev : INITIAL_DEVICES;
+            return baseList.map(localDevice => {
+              const rd = remoteDevices.find(r => 
+                (r.dbId && (r.dbId === localDevice.dbId || r.dbId === localDevice.id)) ||
+                (r.id && (r.id === localDevice.id || r.id === localDevice.deviceSlug)) ||
+                (r.relayChannel && r.relayChannel === localDevice.relayChannel) ||
+                (r.deviceSlug && (r.deviceSlug === localDevice.deviceSlug || r.deviceSlug === localDevice.id))
               );
+              if (rd) {
+                return {
+                  ...localDevice,
+                  ...rd,
+                  id: localDevice.id, // Keep consistent local UI id (e.g. relay-1, relay-4, relay-exhaust)
+                  dbId: rd.dbId || rd.id,
+                  deviceSlug: localDevice.deviceSlug,
+                  relayChannel: localDevice.relayChannel,
+                  gpioPin: localDevice.gpioPin,
+                  isHardwareConnected: isLive,
+                  controlMode: rd.controlMode || localDevice.controlMode || 'MANUAL',
+                  manualOverrideActive: rd.manualOverrideActive ?? localDevice.manualOverrideActive ?? false,
+                  pendingCommand: false,
+                  lastCommandStatus: localDevice.lastCommandStatus || 'success',
+                  commandHistory: localDevice.commandHistory || [],
+                };
+              }
               return {
-                ...rd,
+                ...localDevice,
                 isHardwareConnected: isLive,
-                controlMode: rd.controlMode || localMatch?.controlMode || 'MANUAL',
-                manualOverrideActive: rd.manualOverrideActive ?? localMatch?.manualOverrideActive ?? false,
-                pendingCommand: false,
-                lastCommandStatus: localMatch?.lastCommandStatus || 'success',
-                commandHistory: localMatch?.commandHistory || [],
               };
             });
           });
         } else {
-          setDevices(prev =>
-            prev.map(d => ({
+          setDevices(prev => {
+            const baseList = prev.length >= 5 ? prev : INITIAL_DEVICES;
+            return baseList.map(d => ({
               ...d,
               isHardwareConnected: isLive,
-            }))
-          );
+            }));
+          });
         }
 
         // 3. Fetch latest sensor telemetry from Supabase
@@ -1333,7 +1370,7 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     );
     if (!target) return;
 
-    if (target.type === 'unused' || target.relayChannel === 4) return;
+    if (target.type === 'unused') return;
 
     // Safety Inhibit Check: Enforce lockout during gas danger or pending reset
     // Demo alerts/simulations must NEVER activate physical hardware lockouts!
@@ -1365,6 +1402,13 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       prev.map(d => (d.id === target.id || (target.dbId && d.dbId === target.dbId) ? { ...d, pendingCommand: true, lastCommandStatus: 'pending' } : d))
     );
 
+    addToast({
+      type: 'info',
+      title: 'Command Dispatched',
+      message: `${target.name} (GPIO ${target.gpioPin}) -> pending ESP32 ACK...`,
+      gpio: target.gpioPin,
+      duration: 3500,
+    });
     const result = await dispatchAuthenticatedDeviceCommand(
       target,
       state,
@@ -1391,6 +1435,31 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     };
 
     if (result.success) {
+      addToast({
+        type: 'success',
+        title: 'Device Acknowledged',
+        message: `${target.name} confirmed ${result.actualDeviceState ? 'ON' : 'OFF'} by ESP32 (GPIO ${target.gpioPin}, ${result.roundTripMs}ms)`,
+        gpio: target.gpioPin,
+        duration: 4000,
+      });
+      if (target.relayChannel === 3 && result.actualDeviceState) {
+        addToast({
+          type: 'warning',
+          title: 'Motor Safety Timer',
+          message: 'Water Motor active (GPIO 27) — 30-min auto-cutoff timer running.',
+          gpio: 27,
+          duration: 6000,
+        });
+      }
+      if (target.relayChannel === 5) {
+        addToast({
+          type: 'info',
+          title: 'Exhaust Fan Update',
+          message: `Exhaust Fan switched to ${result.actualDeviceState ? 'VENTILATING' : 'STANDBY'} (GPIO 32).`,
+          gpio: 32,
+          duration: 4000,
+        });
+      }
       setDevices(prev => 
         prev.map(device => {
           if (device.id === target.id || (target.dbId && device.dbId === target.dbId)) {
@@ -1438,15 +1507,15 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     );
     if (!target) return;
 
-    // Requirement: Relay 4 on the 4-channel module must remain unused!
+    // Channel reservation guard for unassigned channels
     if (target.type === 'unused') {
       const alert: SystemAlert = {
         id: `unused-channel-${Date.now()}`,
         type: 'command_failure',
         severity: 'warning',
         category: 'device',
-        title: 'Action Blocked: Channel 4 is Reserved / Unused',
-        description: 'Relay channel 4 on the 4-channel module is permanently designated as unused per hardware safety specification.',
+        title: 'Action Blocked: Channel is Reserved / Unused',
+        description: 'This relay channel is currently designated as reserved per hardware safety specification.',
         timestamp: 'Just now',
         isDemo: !import.meta.env.PROD && Boolean(import.meta.env.VITE_DEMO_MODE === 'true'),
         acknowledged: false,
@@ -1466,6 +1535,13 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     );
 
     // Dispatch authenticated command through Supabase to ESP32
+    addToast({
+      type: 'info',
+      title: 'Command Dispatched',
+      message: `${target.name} (GPIO ${target.gpioPin}) -> pending ESP32 ACK...`,
+      gpio: target.gpioPin,
+      duration: 3500,
+    });
     const result = await dispatchAuthenticatedDeviceCommand(
       target,
       nextState,
@@ -1513,6 +1589,31 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }));
 
     if (result.success) {
+      addToast({
+        type: 'success',
+        title: 'Device Acknowledged',
+        message: `${target.name} confirmed ${result.actualDeviceState ? 'ON' : 'OFF'} by ESP32 (GPIO ${target.gpioPin}, ${result.roundTripMs}ms)`,
+        gpio: target.gpioPin,
+        duration: 4000,
+      });
+      if (target.relayChannel === 3 && result.actualDeviceState) {
+        addToast({
+          type: 'warning',
+          title: 'Motor Safety Timer',
+          message: 'Water Motor active (GPIO 27) — 30-min auto-cutoff timer running.',
+          gpio: 27,
+          duration: 6000,
+        });
+      }
+      if (target.relayChannel === 5) {
+        addToast({
+          type: 'info',
+          title: 'Exhaust Fan Update',
+          message: `Exhaust Fan switched to ${result.actualDeviceState ? 'VENTILATING' : 'STANDBY'} (GPIO 32).`,
+          gpio: 32,
+          duration: 4000,
+        });
+      }
       setDevices(prev =>
         prev.map(device => {
           if (device.id === target.id || (target.dbId && device.dbId === target.dbId)) {
@@ -1613,8 +1714,8 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return;
     }
 
-    // Filter controllable user devices (exclude permanently reserved Channel 4 and auto exhaust fan)
-    const targets = devices.filter(d => d.type !== 'unused' && d.relayChannel !== 4 && d.type !== 'exhaust_fan');
+    // Filter controllable user devices across all 5 active relays
+    const targets = devices.filter(d => d.type !== 'unused');
 
     // Mark targets as pending
     setDevices(prev =>
@@ -2988,7 +3089,13 @@ export const SmartHomeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     logout,
     activeDeviceCount,
     totalActiveWatts,
+    toasts,
+    addToast,
+    dismissToast,
   }), [
+    toasts,
+    addToast,
+    dismissToast,
     currentPage,
     enrichedDevices,
     toggleDevice,

@@ -152,48 +152,53 @@ export const GasEmergencyModal: React.FC = () => {
             <span className="text-[10px] text-slate-400">{currentDateStr}</span>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs font-mono">
             <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
-              <span className="text-slate-400 block text-[10px]">Gas Sensor</span>
-              <span className={`font-bold ${isGasHazardPresent ? 'text-rose-400' : 'text-emerald-400'}`}>
-                MQ-2 — {isGasHazardPresent ? 'DANGER' : 'CLEAR'}
+              <span className="text-slate-400 block text-[10px]">Relay 1 (Light 25)</span>
+              <span className="font-bold text-rose-400">OFF (LOCKED)</span>
+            </div>
+
+            <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
+              <span className="text-slate-400 block text-[10px]">Relay 2 (Fan 26)</span>
+              <span className="font-bold text-rose-400">OFF (LOCKED)</span>
+            </div>
+
+            <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
+              <span className="text-slate-400 block text-[10px]">Relay 3 (Motor 27)</span>
+              <span className="font-bold text-rose-400">OFF (LOCKED)</span>
+            </div>
+
+            <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
+              <span className="text-slate-400 block text-[10px]">Relay 4 (Street 14)</span>
+              <span className="font-bold text-rose-400">OFF (LOCKED)</span>
+            </div>
+
+            <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
+              <span className="text-slate-400 block text-[10px]">Relay 5 (Exhaust 32)</span>
+              <span className={`font-bold ${gasSafetyState.exhaustFanActive ? 'text-emerald-400' : 'text-amber-400'}`}>
+                {gasSafetyState.exhaustFanActive ? 'ON (ACTIVE)' : 'OFF (STANDBY)'}
               </span>
-            </div>
-
-            <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
-              <span className="text-slate-400 block text-[10px]">Relay 1 (Light)</span>
-              <span className="font-bold text-rose-400">OFF (FORCED)</span>
-            </div>
-
-            <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
-              <span className="text-slate-400 block text-[10px]">Relay 2 (Fan)</span>
-              <span className="font-bold text-rose-400">OFF (FORCED)</span>
-            </div>
-
-            <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
-              <span className="text-slate-400 block text-[10px]">Relay 3 (Motor)</span>
-              <span className="font-bold text-rose-400">OFF (FORCED)</span>
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs font-mono pt-1">
             <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
-              <span className="text-slate-400 block text-[10px]">DC Exhaust Fan (GPIO 27)</span>
-              <span className={`font-bold ${gasSafetyState.exhaustFanActive ? 'text-emerald-400' : 'text-amber-400'}`}>
-                {gasSafetyState.exhaustFanActive ? 'ON (Safety-Approved)' : 'DISABLED (Spark Hazard)'}
+              <span className="text-slate-400 block text-[10px]">MQ-2 Sensor (GPIO 34)</span>
+              <span className={`font-bold ${isGasHazardPresent ? 'text-rose-400' : 'text-emerald-400'}`}>
+                ADC: {telemetry.gasRawAdc ?? gasSafetyState.rawAdc ?? 'N/A'} — {isGasHazardPresent ? 'DANGER' : 'CLEAR'}
               </span>
             </div>
 
             <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
-              <span className="text-slate-400 block text-[10px]">Main Contactor</span>
-              <span className="font-bold text-rose-400">TRIPPED (ISOLATED)</span>
-            </div>
-
-            <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
-              <span className="text-slate-400 block text-[10px]">Local Buzzer & Siren</span>
+              <span className="text-slate-400 block text-[10px]">Buzzer (GPIO 33)</span>
               <span className={`font-bold ${isSilenced ? 'text-amber-400' : 'text-rose-400'}`}>
                 {isSilenced ? 'SILENCED (Active)' : 'ACTIVE (960Hz)'}
               </span>
+            </div>
+
+            <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
+              <span className="text-slate-400 block text-[10px]">Separate Physical Siren</span>
+              <span className="font-bold text-slate-400">DISABLED (Unverified)</span>
             </div>
           </div>
 

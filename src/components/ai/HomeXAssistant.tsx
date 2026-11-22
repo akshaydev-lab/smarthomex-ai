@@ -52,6 +52,7 @@ export const HomeXAssistant: React.FC = () => {
     'Turn on living room light',
     'Turn off fan',
     'Turn on water motor',
+    'Turn on street light',
     'Emergency exhaust fan',
     'Turn on all devices',
     'Turn off all devices',
@@ -81,6 +82,28 @@ export const HomeXAssistant: React.FC = () => {
 
     setIsProcessing(true);
     const parsed = parseVoiceCommand(commandText, devices, telemetry);
+
+    // If command is safety blocked, do not energize circuits
+    if (parsed.safetyBlocked) {
+      setLastResponse(parsed.replyText);
+      addVoiceLog({
+        transcript: commandText,
+        response: parsed.replyText,
+        executedAction: parsed.details,
+        matchedDeviceId: parsed.targetDeviceId,
+        confidence: 0.95,
+        success: false,
+      });
+
+      if (soundEnabled && settings.voiceFeedbackEnabled) {
+        await speakText(parsed.replyText, true);
+      }
+
+      setTextInput('');
+      resetTranscript();
+      setIsProcessing(false);
+      return;
+    }
 
     // Apply state change if mapped
     if (parsed.action === 'TOGGLE_DEVICE' && parsed.targetDeviceId && parsed.desiredState !== undefined) {
@@ -141,7 +164,7 @@ export const HomeXAssistant: React.FC = () => {
                 )}
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Natural speech command interface for 4-channel ESP32 relays & IoT telemetry queries
+                Natural speech command interface for 5-channel ESP32 relays & IoT telemetry queries
               </p>
             </div>
           </div>

@@ -5,6 +5,7 @@ export interface CommandParseResult {
   action?: 'TOGGLE_DEVICE' | 'ALL_ON' | 'ALL_OFF' | 'QUERY_TEMP' | 'QUERY_GAS' | 'QUERY_POWER' | 'UNKNOWN';
   targetDeviceId?: string;
   desiredState?: boolean;
+  safetyBlocked?: boolean;
   replyText: string;
   details?: string;
 }
@@ -16,27 +17,82 @@ export function parseVoiceCommand(
 ): CommandParseResult {
   const text = rawTranscript.toLowerCase().trim();
 
-  // Master all on/off
-  if (text.includes('turn on all') || text.includes('all on') || text.includes('turn all on') || text.includes('activate all')) {
+  // Safety condition detection: Real combustible gas danger or active lockout
+  const isLockoutActive = 
+    telemetry.gasStatus === 'danger' || 
+    (telemetry.gasRawAdc != null && telemetry.gasRawAdc >= 1600);
+
+  // Multilingual state intent tokens (English, Hindi, Marathi)
+  const onWords = ['on', 'start', 'activate', 'run', 'chalu', 'jalao', 'lawa', 'petawa', 'khol', 'shuru', 'lagao'];
+  const offWords = ['off', 'kill', 'stop', 'band', 'bujhao', 'rok', 'hatao'];
+
+  const hasTurnOff = offWords.some(w => text.includes(w));
+  const hasTurnOn = onWords.some(w => text.includes(w));
+
+  // -------------------------------------------------------------------------
+  // 1. Master Control: All Devices ON / ALL OFF
+  // -------------------------------------------------------------------------
+  if (
+    text.includes('turn on all') || 
+    text.includes('all on') || 
+    text.includes('turn all on') || 
+    text.includes('activate all') ||
+    text.includes('sab chalu') || 
+    text.includes('sab on') ||
+    text.includes('sarva chalu') ||
+    text.includes('sagla chalu')
+  ) {
+    if (isLockoutActive) {
+      return {
+        understood: true,
+        action: 'ALL_ON',
+        desiredState: true,
+        safetyBlocked: true,
+        replyText: 'Safety Alert: Master relay activation is strictly blocked during gas emergency lockout.',
+        details: 'Master ON blocked by Gas Safety Interlock',
+      };
+    }
     return {
       understood: true,
       action: 'ALL_ON',
-      replyText: 'Commanding all active relay channels ON.',
-      details: 'All devices commanded ON',
+      desiredState: true,
+      replyText: 'Commanding all active 5 relay channels ON.',
+      details: 'All 5 relays commanded ON',
     };
   }
 
-  if (text.includes('turn off all') || text.includes('all off') || text.includes('turn all off') || text.includes('shut down all')) {
+  if (
+    text.includes('turn off all') || 
+    text.includes('all off') || 
+    text.includes('turn all off') || 
+    text.includes('shut down all') ||
+    text.includes('sab band') ||
+    text.includes('sab off') ||
+    text.includes('sarva band') ||
+    text.includes('sagla band')
+  ) {
     return {
       understood: true,
       action: 'ALL_OFF',
+      desiredState: false,
       replyText: 'Switching off all active relay channels.',
-      details: 'All devices commanded OFF',
+      details: 'All 5 relays commanded OFF',
     };
   }
 
-  // Query temperature/climate
-  if (text.includes('temperature') || text.includes('how hot') || text.includes('weather') || text.includes('humidity')) {
+  // -------------------------------------------------------------------------
+  // 2. Telemetry Queries: Temperature, Gas, Power (Multilingual)
+  // -------------------------------------------------------------------------
+  // Query temperature / climate
+  if (
+    text.includes('temperature') || 
+    text.includes('how hot') || 
+    text.includes('weather') || 
+    text.includes('humidity') ||
+    text.includes('tapman') ||
+    text.includes('tapanman') ||
+    text.includes('garmi')
+  ) {
     if (telemetry.temperature == null) {
       return {
         understood: true,
@@ -54,8 +110,14 @@ export function parseVoiceCommand(
     };
   }
 
-  // Query gas/smoke
-  if (text.includes('gas') || text.includes('smoke') || text.includes('air quality') || text.includes('leak')) {
+  // Query gas / air quality
+  if (
+    text.includes('gas') || 
+    text.includes('smoke') || 
+    text.includes('air quality') || 
+    text.includes('leak') ||
+    text.includes('hawa')
+  ) {
     if (telemetry.gasPpm == null && telemetry.gasRawAdc == null) {
       return {
         understood: true,
@@ -74,8 +136,16 @@ export function parseVoiceCommand(
     };
   }
 
-  // Query power/voltage
-  if (text.includes('power') || text.includes('watts') || text.includes('voltage') || text.includes('energy')) {
+  // Query power / electrical load
+  if (
+    text.includes('power') || 
+    text.includes('watts') || 
+    text.includes('voltage') || 
+    text.includes('energy') ||
+    text.includes('bijli') ||
+    text.includes('load') ||
+    text.includes('current')
+  ) {
     if (telemetry.power == null) {
       return {
         understood: true,
@@ -94,32 +164,119 @@ export function parseVoiceCommand(
     };
   }
 
-  // Individual device targeting
-  // Light
-  if (text.includes('light') || text.includes('lamp')) {
-    const isTurnOn = text.includes('on') || text.includes('start') || text.includes('activate');
-    const isTurnOff = text.includes('off') || text.includes('kill') || text.includes('stop');
-    const light = devices.find(d => d.type === 'light');
-    if (light && (isTurnOn || isTurnOff)) {
-      const state = isTurnOn;
+  // -------------------------------------------------------------------------
+  // 3. Individual Relay Control (5 Channels)
+  // Check Street Light & Exhaust BEFORE general Light & Fan to prevent intent clash
+  // -------------------------------------------------------------------------
+
+  // Channel 4: Street Light (GPIO 14)
+  if (
+    text.includes('street light') || 
+    text.includes('street-light') || 
+    text.includes('street') || 
+    text.includes('outdoor light') ||
+    text.includes('road light') ||
+    text.includes('bahar ki light') ||
+    text.includes('baherchi light')
+  ) {
+    const streetLight = devices.find(d => d.relayChannel === 4 || d.id === 'relay-4' || d.deviceSlug === 'street-light');
+    if (streetLight && (hasTurnOn || hasTurnOff)) {
+      const state = hasTurnOff ? false : true;
+      if (state && isLockoutActive) {
+        return {
+          understood: true,
+          action: 'TOGGLE_DEVICE',
+          targetDeviceId: streetLight.id,
+          desiredState: true,
+          safetyBlocked: true,
+          replyText: 'Safety Alert: Street Light activation is prohibited during combustible gas emergency.',
+          details: 'Street Light blocked by Gas Safety Interlock',
+        };
+      }
       return {
         understood: true,
         action: 'TOGGLE_DEVICE',
-        targetDeviceId: light.id,
+        targetDeviceId: streetLight.id,
         desiredState: state,
-        replyText: `Living Room Light turned ${state ? 'ON' : 'OFF'}.`,
-        details: `Relay 1 (GPIO ${light.gpioPin}) -> ${state ? 'Active' : 'Idle'}`,
+        replyText: `Street Light turned ${state ? 'ON' : 'OFF'}.`,
+        details: `Relay 4 (GPIO ${streetLight.gpioPin}) -> ${state ? 'Active' : 'Idle'}`,
       };
     }
   }
 
-  // Fan
-  if (text.includes('fan') && !text.includes('exhaust')) {
-    const isTurnOn = text.includes('on') || text.includes('start') || text.includes('activate');
-    const isTurnOff = text.includes('off') || text.includes('kill') || text.includes('stop');
-    const fan = devices.find(d => d.type === 'fan');
-    if (fan && (isTurnOn || isTurnOff)) {
-      const state = isTurnOn;
+  // Channel 5: Exhaust Fan (GPIO 32)
+  if (
+    text.includes('exhaust') || 
+    text.includes('ventilation') || 
+    text.includes('kitchen fan') ||
+    text.includes('chimney')
+  ) {
+    const exhaust = devices.find(d => d.relayChannel === 5 || d.type === 'exhaust_fan' || d.id === 'relay-exhaust');
+    if (exhaust && (hasTurnOn || hasTurnOff || text.includes('emergency'))) {
+      const state = hasTurnOff ? false : true;
+      return {
+        understood: true,
+        action: 'TOGGLE_DEVICE',
+        targetDeviceId: exhaust.id,
+        desiredState: state,
+        replyText: `Kitchen Exhaust Fan turned ${state ? 'ON' : 'OFF'}.`,
+        details: `Relay 5 (GPIO ${exhaust.gpioPin}) -> ${state ? 'VENTILATING' : 'STANDBY'}`,
+      };
+    }
+  }
+
+  // Channel 3: Water Booster Motor / Pump (GPIO 27)
+  if (
+    text.includes('motor') || 
+    text.includes('pump') || 
+    text.includes('water') ||
+    text.includes('pani') ||
+    text.includes('panyachi')
+  ) {
+    const motor = devices.find(d => d.relayChannel === 3 || d.type === 'motor' || d.id === 'relay-3');
+    if (motor && (hasTurnOn || hasTurnOff)) {
+      const state = hasTurnOff ? false : true;
+      if (state && isLockoutActive) {
+        return {
+          understood: true,
+          action: 'TOGGLE_DEVICE',
+          targetDeviceId: motor.id,
+          desiredState: true,
+          safetyBlocked: true,
+          replyText: 'Safety Alert: Water Motor cannot be turned ON during combustible gas emergency lockout.',
+          details: 'Water Motor blocked by Gas Safety Interlock',
+        };
+      }
+      return {
+        understood: true,
+        action: 'TOGGLE_DEVICE',
+        targetDeviceId: motor.id,
+        desiredState: state,
+        replyText: `Water Booster Motor turned ${state ? 'ON (30-min auto-cutoff active)' : 'OFF'}.`,
+        details: `Relay 3 (GPIO ${motor.gpioPin}) -> ${state ? 'Active (30-min timer)' : 'Idle'}`,
+      };
+    }
+  }
+
+  // Channel 2: Ceiling Fan (GPIO 26)
+  if (
+    (text.includes('fan') || text.includes('pankha')) && 
+    !text.includes('exhaust')
+  ) {
+    const fan = devices.find(d => d.relayChannel === 2 || d.type === 'fan' || d.id === 'relay-2');
+    if (fan && (hasTurnOn || hasTurnOff)) {
+      const state = hasTurnOff ? false : true;
+      if (state && isLockoutActive) {
+        return {
+          understood: true,
+          action: 'TOGGLE_DEVICE',
+          targetDeviceId: fan.id,
+          desiredState: true,
+          safetyBlocked: true,
+          replyText: 'Safety Alert: Master Ceiling Fan cannot be turned ON during gas emergency.',
+          details: 'Ceiling Fan blocked by Gas Safety Interlock',
+        };
+      }
       return {
         understood: true,
         action: 'TOGGLE_DEVICE',
@@ -131,38 +288,35 @@ export function parseVoiceCommand(
     }
   }
 
-  // Motor / Pump
-  if (text.includes('motor') || text.includes('pump') || text.includes('water')) {
-    const isTurnOn = text.includes('on') || text.includes('start') || text.includes('run');
-    const isTurnOff = text.includes('off') || text.includes('kill') || text.includes('stop');
-    const motor = devices.find(d => d.type === 'motor');
-    if (motor && (isTurnOn || isTurnOff)) {
-      const state = isTurnOn;
+  // Channel 1: Living Room Light (GPIO 25)
+  if (
+    text.includes('light') || 
+    text.includes('lamp') || 
+    text.includes('batti') || 
+    text.includes('roshni') ||
+    text.includes('diva')
+  ) {
+    const light = devices.find(d => d.relayChannel === 1 || d.type === 'light' || d.id === 'relay-1');
+    if (light && (hasTurnOn || hasTurnOff)) {
+      const state = hasTurnOff ? false : true;
+      if (state && isLockoutActive) {
+        return {
+          understood: true,
+          action: 'TOGGLE_DEVICE',
+          targetDeviceId: light.id,
+          desiredState: true,
+          safetyBlocked: true,
+          replyText: 'Safety Alert: Living Room Light cannot be turned ON during combustible gas emergency lockout.',
+          details: 'Light blocked by Gas Safety Interlock',
+        };
+      }
       return {
         understood: true,
         action: 'TOGGLE_DEVICE',
-        targetDeviceId: motor.id,
+        targetDeviceId: light.id,
         desiredState: state,
-        replyText: `Water Booster Motor turned ${state ? 'ON' : 'OFF'}.`,
-        details: `Relay 3 (GPIO ${motor.gpioPin}) -> ${state ? 'Active' : 'Idle'}`,
-      };
-    }
-  }
-
-  // Exhaust Fan
-  if (text.includes('exhaust') || text.includes('ventilation') || text.includes('kitchen fan')) {
-    const isTurnOn = text.includes('on') || text.includes('start') || text.includes('activate') || text.includes('emergency');
-    const isTurnOff = text.includes('off') || text.includes('kill') || text.includes('stop');
-    const exhaust = devices.find(d => d.type === 'exhaust_fan');
-    if (exhaust && (isTurnOn || isTurnOff)) {
-      const state = isTurnOn;
-      return {
-        understood: true,
-        action: 'TOGGLE_DEVICE',
-        targetDeviceId: exhaust.id,
-        desiredState: state,
-        replyText: `Kitchen Exhaust Fan turned ${state ? 'ON' : 'OFF'}.`,
-        details: `Relay 5 (GPIO ${exhaust.gpioPin}) -> ${state ? 'Active' : 'Idle'}`,
+        replyText: `Living Room Light turned ${state ? 'ON' : 'OFF'}.`,
+        details: `Relay 1 (GPIO ${light.gpioPin}) -> ${state ? 'Active' : 'Idle'}`,
       };
     }
   }
@@ -170,7 +324,7 @@ export function parseVoiceCommand(
   return {
     understood: false,
     action: 'UNKNOWN',
-    replyText: `I heard "${rawTranscript}", but I'm not sure which IoT control to map this to. Try "Turn on living room light", "Turn off fan", "Emergency exhaust", or "What is the temperature?".`,
+    replyText: `I heard "${rawTranscript}", but I'm not sure which IoT control to map this to. Try "Turn on living room light", "Turn off fan", "Start motor", "Turn on street light", "Emergency exhaust", or "What is the temperature?".`,
     details: 'Unrecognized intent',
   };
 }

@@ -311,6 +311,16 @@ export interface AppSettings {
   };
 }
 
+export interface LiveToast {
+  id: string;
+  type: 'info' | 'success' | 'warning' | 'error' | 'gas_emergency';
+  title: string;
+  message: string;
+  timestamp: string;
+  gpio?: number;
+  duration?: number;
+}
+
 export type NavigationPage = 
   | 'overview'
   | 'devices'

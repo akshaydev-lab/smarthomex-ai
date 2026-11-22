@@ -71,6 +71,9 @@ export const GasSensorCard: React.FC<{ telemetry: SensorTelemetry }> = ({ teleme
               <h3 className="font-bold text-[#F8FAFC] text-base">
                 MQ-2 Combustible Gas & Smoke Sensor
               </h3>
+              <Badge variant="demo" size="sm">
+                DEMO AUTOMATION MODE
+              </Badge>
               <Badge variant={telemetry.isHardwareConnected ? 'emerald' : (!import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true') ? 'demo' : 'slate'} size="sm">
                 {telemetry.isHardwareConnected ? 'ESP32 GPIO 34' : (!import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true') ? 'Demo Emulation' : 'Offline / Standby'}
               </Badge>
@@ -136,6 +139,32 @@ export const GasSensorCard: React.FC<{ telemetry: SensorTelemetry }> = ({ teleme
               ? 'WARNING / ELEVATED' 
               : 'ENVIRONMENT SAFE'}
           </Badge>
+        </div>
+      </div>
+
+      {/* Quick Live Status Ribbon for Demo & Live Evaluation */}
+      <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
+        <div className="p-2 rounded-lg bg-[#0B0F12] border border-white/[0.06] flex flex-col">
+          <span className="text-[#64748B] text-[10px]">MQ-2 RAW ADC</span>
+          <span className="font-bold text-[#F8FAFC]">{rawAdc != null ? `${rawAdc}` : '--'}</span>
+        </div>
+        <div className="p-2 rounded-lg bg-[#0B0F12] border border-white/[0.06] flex flex-col">
+          <span className="text-[#64748B] text-[10px]">GAS SAFETY STATUS</span>
+          <span className={`font-bold ${isDanger ? 'text-red-400' : isWarning ? 'text-amber-400' : 'text-emerald-400'}`}>
+            {isDanger ? 'EMERGENCY LOCKOUT' : isWarning ? 'WARNING' : 'SAFE'}
+          </span>
+        </div>
+        <div className="p-2 rounded-lg bg-[#0B0F12] border border-white/[0.06] flex flex-col">
+          <span className="text-[#64748B] text-[10px]">EXHAUST (GPIO 32)</span>
+          <span className={`font-bold ${gasSafetyState.exhaustFanActive ? 'text-teal-400 animate-pulse' : 'text-slate-400'}`}>
+            {gasSafetyState.exhaustFanActive ? 'ON (VENTILATING)' : 'OFF (STANDBY)'}
+          </span>
+        </div>
+        <div className="p-2 rounded-lg bg-[#0B0F12] border border-white/[0.06] flex flex-col">
+          <span className="text-[#64748B] text-[10px]">BUZZER (GPIO 33)</span>
+          <span className={`font-bold ${gasSafetyState.buzzerActive || isDanger ? 'text-amber-400 animate-pulse' : 'text-slate-400'}`}>
+            {gasSafetyState.buzzerActive || isDanger ? 'SIREN ACTIVE' : 'SILENT'}
+          </span>
         </div>
       </div>
 
@@ -219,7 +248,7 @@ export const GasSensorCard: React.FC<{ telemetry: SensorTelemetry }> = ({ teleme
           </div>
         </div>
 
-        {/* Electrical Relay & Contactor Lockout */}
+        {/* Electrical 5-Relay & Lockout Status */}
         <div className={`p-3.5 rounded-xl border transition-all ${
           isDanger || isClearedPendingReset
             ? 'bg-amber-950/30 border-amber-500/50'
@@ -227,23 +256,23 @@ export const GasSensorCard: React.FC<{ telemetry: SensorTelemetry }> = ({ teleme
         }`}>
           <div className="flex items-center justify-between mb-1">
             <span className="text-xs font-mono text-[#94A3B8] flex items-center gap-1.5">
-              <ZapOff className="h-3.5 w-3.5 text-amber-400" /> Relays & Contactor
+              <ZapOff className="h-3.5 w-3.5 text-amber-400" /> 5-Relay Automation & Safety
             </span>
-            <span className="text-[10px] font-mono text-[#64748B]">Spark Prevention</span>
+            <span className="text-[10px] font-mono text-[#64748B]">Ch 1–5 Protection</span>
           </div>
           <div className="mt-2 flex items-center justify-between">
             <div>
               <span className={`text-sm font-bold block ${
                 isDanger || isClearedPendingReset ? 'text-amber-300' : isOffline ? 'text-[#64748B]' : 'text-slate-200'
               }`}>
-                {isDanger ? 'ALL RELAYS FORCED OFF' : isClearedPendingReset ? 'LOCKED PENDING RESET' : isOffline ? 'CONTROLLER OFFLINE' : 'CIRCUITS ARMED'}
+                {isDanger ? 'RELAYS 1–4 OFF • EXHAUST 5 ON' : isClearedPendingReset ? 'LOCKED PENDING RESET' : isOffline ? 'CONTROLLER OFFLINE' : '5 RELAYS ARMED & ACTIVE'}
               </span>
               <span className="text-[11px] text-[#94A3B8]">
                 {isDanger || isClearedPendingReset
-                  ? 'Main Contactor TRIPPED. Light/Fan/Motor OFF.' 
+                  ? 'Light(25), Fan(26), Motor(27), Street(14) OFF. Exhaust(32) ON.' 
                   : isOffline
                   ? 'Hardware disconnected. Relays disarmed.'
-                  : 'Normal power distribution'}
+                  : 'Independent 5-channel relay switching active'}
               </span>
             </div>
             <div className={`h-8 w-8 rounded-lg flex items-center justify-center border ${

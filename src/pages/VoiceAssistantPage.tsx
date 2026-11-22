@@ -26,11 +26,12 @@ export const VoiceAssistantPage: React.FC = () => {
               <CheckCircle2 className="h-4 w-4 text-emerald-400" /> Relay Actuation
             </span>
             <ul className="space-y-1 text-slate-400 font-mono">
-              <li>• "Turn on living room light"</li>
-              <li>• "Turn off ceiling fan"</li>
-              <li>• "Start water motor / pump"</li>
-              <li>• "Emergency exhaust fan"</li>
-              <li>• "Turn off all devices"</li>
+              <li>• "Turn on living room light" (or "Light chalu karo")</li>
+              <li>• "Turn off ceiling fan" (or "Pankha band kara")</li>
+              <li>• "Start water motor / pump" (or "Pani chalu karo")</li>
+              <li>• "Turn on street light" (GPIO 14)</li>
+              <li>• "Emergency exhaust fan" (GPIO 32)</li>
+              <li>• "Turn off all devices" (or "Sab band karo")</li>
             </ul>
           </div>
 

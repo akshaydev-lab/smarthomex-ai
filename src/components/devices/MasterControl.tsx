@@ -31,7 +31,7 @@ export const MasterControl: React.FC = () => {
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-base font-bold text-[#F8FAFC]">
-                4-Channel ESP32 Relay Master Controller
+                5-Channel ESP32 Relay Master Controller
               </h2>
               <Badge
                 variant={hardwareBridge.esp32Connected ? 'emerald' : (!import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true') ? 'demo' : 'slate'}
@@ -41,7 +41,7 @@ export const MasterControl: React.FC = () => {
               </Badge>
             </div>
             <p className="text-xs text-[#94A3B8] mt-0.5">
-              Active-LOW Relays: Ch 1 Light (GPIO 14), Ch 2 Fan (GPIO 25), Ch 3 Motor (GPIO 26). Channel 4 is Reserved.
+              Active-LOW Relays: Ch 1 Light (GPIO 25), Ch 2 Fan (GPIO 26), Ch 3 Motor (GPIO 27), Ch 4 Street Light (GPIO 14), Ch 5 Exhaust Fan (GPIO 32).
             </p>
           </div>
         </div>
@@ -98,7 +98,7 @@ export const MasterControl: React.FC = () => {
               <h3 className="font-bold text-base text-[#F8FAFC]">Activate All Relays?</h3>
             </div>
             <p className="text-xs text-[#94A3B8] mb-4 leading-relaxed">
-              This action will energize all active-LOW controllable relay channels (Light, Fan, and Water Motor) simultaneously. Safety interlocks remain strictly active and will prevent actuation if combustible gas is present.
+              This action will energize all active-LOW controllable relay channels (Light, Fan, Motor, Street Light, and Exhaust Fan) simultaneously. Safety interlocks remain strictly active and will prevent actuation if combustible gas is present.
             </p>
             <div className="flex items-center justify-end gap-2.5">
               <Button

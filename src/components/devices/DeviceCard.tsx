@@ -48,7 +48,7 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({
 
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
-  const isUnusedChannel = device.type === 'unused' || device.relayChannel === 4;
+  const isUnusedChannel = device.type === 'unused';
   const isExhaustFan = device.type === 'exhaust_fan';
 
   const handleModeToggle = () => {
@@ -135,16 +135,9 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({
                     <MapPin className="h-3 w-3 text-emerald-400" />
                     {device.room}
                   </span>
-                  {isExhaustFan && (
-                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-teal-950/60 text-teal-300 border border-teal-500/30">
-                      Single-Ch Relay (GPIO 27)
-                    </span>
-                  )}
-                  {isUnusedChannel && (
-                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#111820] text-[#64748B] border border-white/[0.06]">
-                      Unused Ch 4
-                    </span>
-                  )}
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#111820] text-emerald-300 border border-emerald-500/30">
+                    Relay {device.relayChannel} (GPIO {device.gpioPin})
+                  </span>
                 </div>
               </div>
             </div>
@@ -154,44 +147,42 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({
               <span className="text-[11px] font-mono px-2.5 py-1 rounded-full bg-[#111820] text-[#64748B] border border-white/[0.08]">
                 LOCKED / UNUSED
               </span>
-            ) : isExhaustFan ? (
-              <div className="flex flex-col items-end">
-                <span className={`text-[11px] font-mono font-bold px-2.5 py-1 rounded-full border transition-all ${
-                  device.state
-                    ? 'bg-teal-500/20 text-teal-300 border-teal-500/40 animate-pulse'
-                    : 'bg-[#111820] text-[#64748B] border-white/[0.08]'
-                }`}>
-                  {device.state ? 'VENTILATING (AUTO)' : 'STANDBY (AUTO)'}
-                </span>
-                <span className="text-[9px] font-mono text-teal-400/90 mt-0.5 font-semibold">
-                  Automatic Control Only
-                </span>
-              </div>
             ) : (
-              <button
-                onClick={() => onToggle(device.id)}
-                disabled={device.pendingCommand}
-                className={`relative inline-flex h-8 w-14 shrink-0 cursor-pointer items-center rounded-full border-2 transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-emerald-500/50 disabled:opacity-60 disabled:cursor-wait ${
-                  device.state
-                    ? 'bg-emerald-500 border-emerald-400 shadow-glow-emerald'
-                    : 'bg-[#111820] border-white/[0.12]'
-                }`}
-                role="switch"
-                aria-checked={device.state}
-                aria-label={`Toggle ${device.name}`}
-              >
-                {device.pendingCommand ? (
-                  <span className="absolute inset-0 flex items-center justify-center">
-                    <Loader2 className="h-4 w-4 animate-spin text-white" />
+              <div className="flex items-center gap-2">
+                {isExhaustFan && (
+                  <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border hidden sm:inline-block ${
+                    device.state
+                      ? 'bg-teal-500/20 text-teal-300 border-teal-500/40 animate-pulse'
+                      : 'bg-[#111820] text-[#64748B] border-white/[0.08]'
+                  }`}>
+                    {device.state ? 'VENTILATING' : 'STANDBY'}
                   </span>
-                ) : (
-                  <span
-                    className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-[#0B0F12] shadow-lg ring-0 transition duration-200 ease-in-out ${
-                      device.state ? 'translate-x-6.5 bg-[#0B0F12]' : 'translate-x-1 bg-[#64748B]'
-                    }`}
-                  />
                 )}
-              </button>
+                <button
+                  onClick={() => onToggle(device.id)}
+                  disabled={device.pendingCommand}
+                  className={`relative inline-flex h-8 w-14 shrink-0 cursor-pointer items-center rounded-full border-2 transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-emerald-500/50 disabled:opacity-60 disabled:cursor-wait ${
+                    device.state
+                      ? isExhaustFan ? 'bg-teal-500 border-teal-400 shadow-[0_0_15px_rgba(20,184,166,0.5)]' : 'bg-emerald-500 border-emerald-400 shadow-glow-emerald'
+                      : 'bg-[#111820] border-white/[0.12]'
+                  }`}
+                  role="switch"
+                  aria-checked={device.state}
+                  aria-label={`Toggle ${device.name}`}
+                >
+                  {device.pendingCommand ? (
+                    <span className="absolute inset-0 flex items-center justify-center">
+                      <Loader2 className="h-4 w-4 animate-spin text-white" />
+                    </span>
+                  ) : (
+                    <span
+                      className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-[#0B0F12] shadow-lg ring-0 transition duration-200 ease-in-out ${
+                        device.state ? 'translate-x-6.5 bg-[#0B0F12]' : 'translate-x-1 bg-[#64748B]'
+                      }`}
+                    />
+                  )}
+                </button>
+              </div>
             )}
           </div>
 
@@ -292,10 +283,10 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({
             </div>
           )}
 
-          {/* Unused Channel 4 Hardware Notice */}
+          {/* Unused Channel Hardware Notice */}
           {isUnusedChannel && (
             <div className="mt-2.5 p-2 rounded-xl bg-[#111820] border border-white/[0.08] text-[11px] text-[#94A3B8]">
-              Channel 4 of the 4-channel Active-LOW relay module is permanently reserved as unused per hardware specification.
+              This relay channel is currently designated as reserved per hardware specification.
             </div>
           )}
 

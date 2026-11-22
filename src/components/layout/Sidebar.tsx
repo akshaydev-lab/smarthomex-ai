@@ -35,7 +35,7 @@ export const Sidebar: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ is
 
   const navItems: NavItem[] = [
     { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'devices', label: 'Devices', icon: ToggleRight, badge: '4 Relays', badgeVariant: 'emerald' },
+    { id: 'devices', label: 'Devices', icon: ToggleRight, badge: '5 Relays', badgeVariant: 'emerald' },
     { id: 'sensors', label: 'Sensors', icon: Activity },
     { id: 'automations', label: 'Automation', icon: Workflow },
     {
@@ -75,9 +75,8 @@ export const Sidebar: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ is
 
       {/* Sidebar container */}
       <aside
-        className={`fixed top-0 left-0 bottom-0 z-50 w-72 bg-[#080D11] border-r border-white/[0.08] flex flex-col transition-transform duration-300 ease-in-out ${
-          isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-        }`}
+        className={`fixed top-0 left-0 bottom-0 z-50 w-72 bg-[#080D11] border-r border-white/[0.08] flex flex-col transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+          }`}
       >
         {/* Brand header */}
         <div className="p-5 border-b border-white/[0.08] flex items-center justify-between">
@@ -118,17 +117,15 @@ export const Sidebar: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ is
               <button
                 key={item.id}
                 onClick={() => handleNavClick(item.id)}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all group cursor-pointer ${
-                  isActive
-                    ? 'bg-emerald-500/12 text-emerald-300 border-l-2 border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.12)] font-semibold'
-                    : 'text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-[#141C23] border-l-2 border-transparent'
-                }`}
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all group cursor-pointer ${isActive
+                  ? 'bg-emerald-500/12 text-emerald-300 border-l-2 border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.12)] font-semibold'
+                  : 'text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-[#141C23] border-l-2 border-transparent'
+                  }`}
               >
                 <div className="flex items-center gap-3">
                   <Icon
-                    className={`h-4.5 w-4.5 transition-colors ${
-                      isActive ? 'text-emerald-400' : 'text-[#64748B] group-hover:text-emerald-400'
-                    }`}
+                    className={`h-4.5 w-4.5 transition-colors ${isActive ? 'text-emerald-400' : 'text-[#64748B] group-hover:text-emerald-400'
+                      }`}
                   />
                   <span>{item.label}</span>
                 </div>
@@ -156,9 +153,8 @@ export const Sidebar: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ is
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                   )}
                   <span
-                    className={`relative inline-flex rounded-full h-2 w-2 ${
-                      hardwareBridge.esp32Connected ? 'bg-emerald-500 shadow-glow-emerald' : 'bg-slate-500'
-                    }`}
+                    className={`relative inline-flex rounded-full h-2 w-2 ${hardwareBridge.esp32Connected ? 'bg-emerald-500 shadow-glow-emerald' : 'bg-slate-500'
+                      }`}
                   ></span>
                 </span>
                 <span className="text-xs font-semibold text-[#F8FAFC]">ESP32 Node</span>
@@ -167,8 +163,8 @@ export const Sidebar: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ is
                 {hardwareBridge.esp32Connected
                   ? 'ONLINE'
                   : (!import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === 'true')
-                  ? 'DEMO'
-                  : 'OFFLINE'}
+                    ? 'DEMO'
+                    : 'OFFLINE'}
               </Badge>
             </div>
 
@@ -192,17 +188,16 @@ export const Sidebar: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ is
                 {(() => {
                   const isOffline = !hardwareBridge.esp32Connected || telemetry.gasRawAdc == null || telemetry.gasStatus === 'offline';
                   return (
-                    <span className={`font-semibold text-[11px] ${
-                      isOffline
-                        ? 'text-slate-500'
-                        : telemetry.gasStatus === 'danger'
+                    <span className={`font-semibold text-[11px] ${isOffline
+                      ? 'text-slate-500'
+                      : telemetry.gasStatus === 'danger'
                         ? 'text-red-400 font-bold'
                         : telemetry.gasStatus === 'warning'
-                        ? 'text-amber-400'
-                        : telemetry.gasStatus === 'warming_up'
-                        ? 'text-cyan-400'
-                        : 'text-emerald-400'
-                    }`}>
+                          ? 'text-amber-400'
+                          : telemetry.gasStatus === 'warming_up'
+                            ? 'text-cyan-400'
+                            : 'text-emerald-400'
+                      }`}>
                       {isOffline ? 'OFFLINE' : telemetry.gasStatus.toUpperCase()}
                     </span>
                   );

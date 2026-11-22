@@ -5,6 +5,7 @@ import { MobileNav } from './MobileNav';
 import { DemoNotice } from '../common/DemoNotice';
 import { GasEmergencyModal } from '../alerts/GasEmergencyModal';
 import { EmergencyStatusBanner } from '../alerts/EmergencyStatusBanner';
+import { LiveNotificationToast } from '../common/LiveNotificationToast';
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -17,6 +18,9 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
         <div className="ambient-orb-2" />
         <div className="ambient-orb-3" />
       </div>
+
+      {/* Live System Feedback Toast Container */}
+      <LiveNotificationToast />
 
       {/* Full-Screen Red Emergency Gas Alert Modal (Highest Priority) */}
       <GasEmergencyModal />

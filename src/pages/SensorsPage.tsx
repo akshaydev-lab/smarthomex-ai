@@ -151,7 +151,7 @@ export const SensorsPage: React.FC = () => {
           currentValue={telemetry.current}
           accentColor="amber"
           statusText={telemetry.current == null ? 'FAULT / DISCONNECTED' : 'LOAD BALANCED'}
-          subtitle="Proportional to active 4-channel relay states."
+          subtitle="Proportional to active 5-channel relay states."
           isRealHardware={telemetry.isHardwareConnected}
         />
 
